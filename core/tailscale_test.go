@@ -21,7 +21,7 @@ func TestInTailnet(t *testing.T) {
 		}
 	}
 	s := &state{} // Tailscale off: nothing goes to the tailnet
-	if viaTS(s, 1, netip.MustParseAddrPort("100.64.0.1:80")) != nil {
+	if ts, _ := viaTS(s, 1, netip.MustParseAddrPort("100.64.0.1:80")); ts != nil {
 		t.Error("viaTS with Tailscale off")
 	}
 }
@@ -30,23 +30,24 @@ func TestViaTSExitNode(t *testing.T) {
 	node := &tsNode{}
 	tailnet, public := netip.MustParseAddrPort("100.64.0.1:80"), netip.MustParseAddrPort("1.1.1.1:443")
 	for _, c := range []struct {
-		name      string
-		exit      bool
-		routed    []int
-		uid       int
-		dst       netip.AddrPort
-		wantViaTS bool
+		name   string
+		exit   bool
+		routed []int
+		uid    int
+		dst    netip.AddrPort
+		want   string // route name, "" for not through Tailscale
 	}{
-		{"tailnet, no exit node", false, nil, 1, tailnet, true},
-		{"internet, no exit node", false, nil, 1, public, false},
-		{"internet, exit node, all apps", true, nil, 1, public, true},
-		{"internet, exit node, app picked", true, []int{1}, 1, public, true},
-		{"internet, exit node, app not picked", true, []int{2}, 1, public, false},
-		{"tailnet, exit node, app not picked", true, []int{2}, 1, tailnet, true}, // the tailnet is for every app
+		{"tailnet, no exit node", false, nil, 1, tailnet, "tailscale"},
+		{"internet, no exit node", false, nil, 1, public, ""},
+		{"internet, exit node, all apps", true, nil, 1, public, "exit node"},
+		{"internet, exit node, app picked", true, []int{1}, 1, public, "exit node"},
+		{"internet, exit node, app not picked", true, []int{2}, 1, public, ""},
+		{"tailnet, exit node, app not picked", true, []int{2}, 1, tailnet, "tailscale"}, // the tailnet is for every app
 	} {
 		s := &state{ts: node, cfg: config{TSExit: c.exit}, routed: set(c.routed)}
-		if got := viaTS(s, c.uid, c.dst) != nil; got != c.wantViaTS {
-			t.Errorf("%s: via Tailscale = %v, want %v", c.name, got, c.wantViaTS)
+		ts, got := viaTS(s, c.uid, c.dst)
+		if got != c.want || (ts != nil) != (c.want != "") {
+			t.Errorf("%s: route %q (node %v), want %q", c.name, got, ts != nil, c.want)
 		}
 	}
 }

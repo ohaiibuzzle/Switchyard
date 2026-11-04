@@ -30,11 +30,11 @@ type config struct {
 	AllowDomains []string `json:"allowDomains"` // user rules, subdomains included
 	BlockDomains []string `json:"blockDomains"`
 	Log          bool     `json:"log"`
-	TSDir        string   `json:"tsDir"`      // Tailscale state dir; empty = off. Tailnet IPs go here before WireGuard or proxy.
-	TSHostname   string   `json:"tsHostname"` // the device's name, as Tailscale's own app uses
-	TSControlURL string   `json:"tsControlUrl"`
-	TSExit       bool     `json:"tsExit"`     // route mode "exit node": the routed apps' internet goes through Tailscale
-	TSExitNode   string   `json:"tsExitNode"` // its Tailscale IP; empty with TSExit fails closed // empty = Tailscale's own servers
+	TSDir        string   `json:"tsDir"`        // Tailscale state dir; empty = off. Tailnet IPs go here before WireGuard or proxy.
+	TSHostname   string   `json:"tsHostname"`   // the device's name, as Tailscale's own app uses
+	TSControlURL string   `json:"tsControlUrl"` // empty = Tailscale's own servers
+	TSExit       bool     `json:"tsExit"`       // route mode "exit node": the routed apps' internet goes through Tailscale
+	TSExitNode   string   `json:"tsExitNode"`   // its Tailscale IP; empty with TSExit fails closed
 	TSAuthKey    string   `json:"tsAuthKey"`
 	TSDNS        bool     `json:"tsDns"` // ask the tailnet first, DNSUpstream for what it can't answer
 }
@@ -84,27 +84,24 @@ func viaWG(s *state, uid int, dst netip.AddrPort) *wgTunnel {
 	return nil
 }
 
-// viaTS returns the Tailscale node if dst is on the tailnet (every app may reach it), or for
-// the routed apps' internet traffic when an exit node is the route.
-func viaTS(s *state, uid int, dst netip.AddrPort) *tsNode {
-	if s.ts != nil && (inTailnet(dst.Addr()) || s.cfg.TSExit && routed(s, uid)) {
-		return s.ts
+// viaTS returns the Tailscale node and the route's name if this flow goes through it: the
+// tailnet for every app, or the routed apps' internet when an exit node is the route.
+func viaTS(s *state, uid int, dst netip.AddrPort) (*tsNode, string) {
+	switch {
+	case s.ts == nil:
+	case inTailnet(dst.Addr()):
+		return s.ts, "tailscale"
+	case s.cfg.TSExit && routed(s, uid):
+		return s.ts, "exit node"
 	}
-	return nil
-}
-
-func tsRoute(dst netip.AddrPort) string {
-	if inTailnet(dst.Addr()) {
-		return "tailscale"
-	}
-	return "exit node"
+	return nil, ""
 }
 
 // upstreamDial opens the app's TCP flow and names the path it took: tailscale, exit node, wireguard, proxy or direct.
 func upstreamDial(s *state, uid int, dst netip.AddrPort) (net.Conn, string, error) {
-	if ts := viaTS(s, uid, dst); ts != nil {
+	if ts, rt := viaTS(s, uid, dst); ts != nil {
 		c, err := ts.dial("tcp", dst)
-		return c, tsRoute(dst), err
+		return c, rt, err
 	}
 	if wg := viaWG(s, uid, dst); wg != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

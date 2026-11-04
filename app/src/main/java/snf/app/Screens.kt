@@ -184,7 +184,7 @@ fun AppsScreen(s: Settings) {
     val blocked = s.blockedUids
     val proxied = s.routedUids
     val mode = s.routeMode
-    val proxyOn = mode == "proxy" || mode == "wg" || mode == "exit"
+    val proxyOn = mode != "off"
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         OutlinedTextField(
             query, { query = it }, Modifier.fillMaxWidth(),
@@ -195,7 +195,7 @@ fun AppsScreen(s: Settings) {
             FilterChip(showSystem, { showSystem = !showSystem }, label = { Text("System apps") })
         }
         if (proxyOn) {
-            Hint("Globe: route through ${when (mode) { "wg" -> "WireGuard"; "exit" -> "the exit node"; else -> "proxy" }}. None picked = all apps.")
+            Hint("Globe: route ${routeSummary(s).replaceFirstChar { it.lowercase() }}. None picked = all apps.")
             Spacer(Modifier.height(8.dp))
         }
         val list = apps
