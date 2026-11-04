@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- one-tap battery exemption; not Play-safe, fine since we ship outside Play -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- per-app firewall needs to list every installed app -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 

@@ -1,5 +1,10 @@
 package snf.app
 
+import android.content.Intent
+import android.net.Uri
+import android.os.PowerManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -19,6 +24,11 @@ fun HomeScreen(s: Settings, onActivity: () -> Unit, goTo: (Tab) -> Unit) {
     val starting = FilterVpnService.starting
     val err = FilterVpnService.lastError
     val strictPrivateDns = android.provider.Settings.Global.getString(act.contentResolver, "private_dns_mode") == "hostname"
+    val power = act.getSystemService(PowerManager::class.java)
+    var batteryExempt by remember { mutableStateOf(power.isIgnoringBatteryOptimizations(act.packageName)) }
+    val askExempt = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        batteryExempt = power.isIgnoringBatteryOptimizations(act.packageName)
+    }
     val c = MaterialTheme.colorScheme
     val btnColor by animateColorAsState(if (running) c.primary else c.surfaceContainerHighest)
     val iconColor by animateColorAsState(if (running) c.onPrimary else c.onSurfaceVariant)
@@ -34,9 +44,21 @@ fun HomeScreen(s: Settings, onActivity: () -> Unit, goTo: (Tab) -> Unit) {
                 }
             }
             Spacer(Modifier.height(20.dp))
-            Text(if (running) "Protected" else if (starting) "Starting…" else "Not protected", style = MaterialTheme.typography.headlineSmall)
+            val status = when {
+                running && FilterVpnService.alwaysOn -> "Always-on"
+                running -> "Protected"
+                starting -> "Starting…"
+                else -> "Not protected"
+            }
+            Text(status, style = MaterialTheme.typography.headlineSmall)
         }
         if (err != null) Notice(Icons.Rounded.ErrorOutline, "Couldn't start the filter", err)
+        if (!batteryExempt) Notice(
+            Icons.Rounded.BatteryAlert, "Let it run in the background",
+            "Battery optimization can stop the filter. Tap to allow.",
+        ) {
+            askExempt.launch(Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${act.packageName}")))
+        }
         if (strictPrivateDns) Notice(
             Icons.Rounded.Warning, "Turn off Android's Private DNS",
             "It's set to a specific provider, which conflicts with this app. Set it to Off or Automatic in system settings.",

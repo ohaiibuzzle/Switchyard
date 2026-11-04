@@ -27,6 +27,8 @@ class FilterVpnService : VpnService(), snf.core.Callback {
             private set
         var lastError by mutableStateOf<String?>(null)
             private set
+        var alwaysOn by mutableStateOf(false) // the system runs us as the Always-on VPN
+            private set
 
         // Every engine start/reconfigure/stop runs here, in order, so a stale config can't win.
         private val engine = Executors.newSingleThreadExecutor()
@@ -80,6 +82,8 @@ class FilterVpnService : VpnService(), snf.core.Callback {
             val pfd = b.establish() ?: error("VPN permission revoked")
             snf.core.Core.start(pfd.detachFd().toLong(), MTU.toLong(), settings.configJson(), this)
             lastError = null
+            // Only true once our tunnel is established. shortcut: read at start, so toggling Always-on shows after a restart.
+            alwaysOn = isAlwaysOn
             running = true
         } catch (e: Exception) {
             lastError = e.message
@@ -99,6 +103,7 @@ class FilterVpnService : VpnService(), snf.core.Callback {
     private fun shutdown() {
         snf.core.Core.stop()
         running = false
+        alwaysOn = false
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }

@@ -82,6 +82,7 @@ build-core.sh         rebuilds app/libs/core.aar
 - **WireGuard config storage:** configs (which include private keys) live in prefs; `allowBackup="false"` keeps them out of cloud backups. The pre-profiles `wgConf` key is removed on the next profile write.
 - **Blocking DNS providers:** AdGuard DNS (and similar) block ads themselves and answer with `0.0.0.0`. An "allow" rule can't override that; switch provider.
 - **Android Private DNS** set to a specific hostname conflicts with our :853 block, so Home shows a warning.
+- **`VpnService.isAlwaysOn`** is false until our tunnel is established, so read it after `establish()`, not in `onStartCommand`.
 
 ## Conventions
 

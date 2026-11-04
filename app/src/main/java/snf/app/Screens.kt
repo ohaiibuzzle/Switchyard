@@ -78,8 +78,9 @@ fun NavRow(icon: ImageVector, title: String, sub: String, onClick: () -> Unit) =
 )
 
 @Composable
-fun Notice(icon: ImageVector, title: String, body: String) = Surface(
+fun Notice(icon: ImageVector, title: String, body: String, onClick: (() -> Unit)? = null) = Surface(
     shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.errorContainer,
+    modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier,
 ) {
     ListItem(
         headlineContent = { Text(title) }, supportingContent = { Text(body) }, leadingContent = { Icon(icon, null) },
