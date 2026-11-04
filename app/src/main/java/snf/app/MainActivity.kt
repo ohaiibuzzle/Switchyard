@@ -56,7 +56,7 @@ fun AppTheme(content: @Composable () -> Unit) {
 }
 
 enum class Tab(val title: String, val label: String, val icon: ImageVector) {
-    Home("Network Filter", "Home", Icons.Rounded.Shield),
+    Home("Switchyard", "Home", Icons.Rounded.AltRoute),
     Dns("DNS", "DNS", Icons.Rounded.Dns),
     Apps("App access", "Apps", Icons.Rounded.Apps),
     Tailscale("Tailscale", "Tailscale", Icons.Rounded.Hub),

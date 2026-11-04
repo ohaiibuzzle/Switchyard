@@ -7,7 +7,7 @@ android {
     namespace = "snf.app"
     compileSdk = 37
     defaultConfig {
-        applicationId = "dev.ohaiibuzzle.snf"
+        applicationId = "dev.ohaiibuzzle.switchyard"
         minSdk = 29 // getConnectionOwnerUid
         targetSdk = 36
         // CI passes the tag without its "v" (v0.1.3 -> 0.1.3); the code packs it so a later tag always upgrades.

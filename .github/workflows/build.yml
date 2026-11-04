@@ -70,11 +70,11 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 -d > "$SNF_KEYSTORE"
           ./gradlew assembleRelease
           for abi in universal arm64-v8a x86_64; do
-            mv "app/build/outputs/apk/release/app-$abi-release.apk" "snf-$GITHUB_REF_NAME-$abi.apk"
+            mv "app/build/outputs/apk/release/app-$abi-release.apk" "switchyard-$GITHUB_REF_NAME-$abi.apk"
           done
 
       - uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: snf-${{ github.ref_name }}-*.apk
+          files: switchyard-${{ github.ref_name }}-*.apk
           generate_release_notes: true

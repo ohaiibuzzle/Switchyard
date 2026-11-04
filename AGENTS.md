@@ -1,7 +1,9 @@
-# SimpleAndroidNetworkFilter
+# Switchyard
 
 Android firewall built on `VpnService`, in the spirit of RethinkDNS. All device traffic goes
 through a local tun; a Go engine decides what happens to each flow.
+
+Internal names (`snf.app`, Go module `snf/core`, `SNF_*` env vars, prefs file `snf`) are the old codename; leave them.
 
 What the app does:
 - **Secure DNS for every app.** Every query on port 53, to any IP, is answered by us and forwarded over DoH, DoT or DoQ. DoT/DoQ (:853), DoH to well-known resolver IPs, and lookups of public DoH hostnames are blocked, so apps can't bypass it.
@@ -53,10 +55,10 @@ build-core.sh         rebuilds app/libs/core.aar
 - **Release APKs:** R8 is on, and core.aar ships its own keep rules (`go.**`, `snf.**`). Native libs are stored compressed (about 10 MB per ABI APK instead of about 45 MB). To test a release build on the emulator without losing app data, sign it with `~/.android/debug.keystore` through the `SNF_*` variables (password `android`, alias `androiddebugkey`) and `adb install -r` the arm64 APK; the emulator is arm64 on Apple silicon.
 - **Versions:** AGP 9.5 (built-in Kotlin, so no `kotlin-android` plugin), Kotlin 2.4, Compose BOM 2026.09, minSdk 29 (for `getConnectionOwnerUid`), compileSdk 37 (required by Compose), targetSdk 36.
 - **On-device testing (emulator `emulator-5554`, Play image, so no root and no tcpdump):**
-  - `adb shell appops set dev.ohaiibuzzle.snf ACTIVATE_VPN allow` skips the VPN consent dialog. Reinstalling stops the VPN; tap the power button again.
+  - `adb shell appops set dev.ohaiibuzzle.switchyard ACTIVATE_VPN allow` skips the VPN consent dialog. Reinstalling stops the VPN; tap the power button again.
   - `adb shell` runs as `com.android.shell` (uid 2000). Its traffic goes through the VPN, so `curl` and `nc -u -q3 -W3` work as test clients. `ping` doesn't: the engine drops ICMP (except to the skipped local network).
   - `uiautomator dump` exposes merged Compose nodes. Empty text fields don't expose their label, so tap them by coordinates.
-  - Settings can be read with `adb exec-out run-as dev.ohaiibuzzle.snf cat shared_prefs/snf.xml`. They can be written with `adb exec-in run-as dev.ohaiibuzzle.snf sh -c 'cat > shared_prefs/snf.xml'` after `am force-stop`.
+  - Settings can be read with `adb exec-out run-as dev.ohaiibuzzle.switchyard cat shared_prefs/snf.xml`. They can be written with `adb exec-in run-as dev.ohaiibuzzle.switchyard sh -c 'cat > shared_prefs/snf.xml'` after `am force-stop`.
   - The emulator's NAT re-joins TCP streams, so TCP segment splits can't be seen from the host. TLS record changes can.
 
 ## How it fits together

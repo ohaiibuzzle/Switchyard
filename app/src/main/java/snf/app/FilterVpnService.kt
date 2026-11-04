@@ -162,7 +162,7 @@ class FilterVpnService : VpnService(), snf.core.Callback {
         }
         return Notification.Builder(this, "vpn")
             .setSmallIcon(R.drawable.ic_launcher_mono)
-            .setContentTitle(if (active) "Network filter active" else "Network filter off")
+            .setContentTitle(if (active) "Switchyard active" else "Switchyard off")
             .setContentIntent(open)
             .setOngoing(active)
             .addAction(Notification.Action.Builder(Icon.createWithResource(this, R.drawable.ic_launcher_mono), if (active) "Stop" else "Start", action).build())

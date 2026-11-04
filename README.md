@@ -1,4 +1,4 @@
-# Network Filter
+# Switchyard
 
 A firewall and ad blocker for Android that runs entirely on your phone. No root needed.
 
@@ -20,7 +20,7 @@ It works by acting as a local VPN, so every app's traffic passes through it firs
 2. Open the app and tap the big power button. Android will ask you to allow a VPN; say yes.
 3. If the app asks to run in the background, tap the notice and allow it. Otherwise Android may stop the filter to save battery.
 
-Optional: to have the filter start on its own at boot and come back if it's stopped, go to Android's **Settings → Network → VPN**, tap the gear next to Network Filter and turn on **Always-on VPN**. The home screen then shows **Always-on**.
+Optional: to have the filter start on its own at boot and come back if it's stopped, go to Android's **Settings → Network → VPN**, tap the gear next to Switchyard and turn on **Always-on VPN**. The home screen then shows **Always-on**.
 
 ## Good to know
 

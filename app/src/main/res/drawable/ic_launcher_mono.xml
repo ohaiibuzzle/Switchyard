@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Themed-icon layer: shield with the funnel punched out (even-odd fill). -->
+<!-- Themed-icon / notification layer: same gate as ic_launcher_fg. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <group android:scaleX="2.5" android:scaleY="2.5" android:translateX="24" android:translateY="24">
-        <path android:fillColor="#FFFFFF" android:fillType="evenOdd"
-            android:pathData="M12,1L3,5v6c0,5.55 3.84,10.74 9,12 5.16,-1.26 9,-6.45 9,-12V5l-9,-4z M7.5,8h9l-3.5,4.5v4l-2,-1v-3z" />
+    <group android:scaleX="0.8" android:scaleY="0.8" android:translateX="10.8" android:translateY="10.8">
+        <path android:strokeColor="#FFFFFF" android:strokeWidth="7" android:strokeLineCap="round"
+            android:pathData="M24,34H24.01 M34,34H44 M18,54H18.01 M30,54H44 M24,74H24.01 M34,74H44 M69,54H78 M88,54H88.01" />
+        <path android:strokeColor="#FFFFFF" android:strokeWidth="11" android:strokeLineCap="round"
+            android:pathData="M55.5,29.5V78.5" />
     </group>
 </vector>

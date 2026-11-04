@@ -4,5 +4,5 @@ pluginManagement {
 dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
-rootProject.name = "SimpleAndroidNetworkFilter"
+rootProject.name = "Switchyard"
 include(":app")
