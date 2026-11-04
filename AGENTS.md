@@ -59,7 +59,7 @@ build-core.sh         rebuilds app/libs/core.aar
 ## How it fits together
 
 - **Our app excludes itself from the VPN** (`addDisallowedApplication(self)`). The engine's sockets therefore go straight out, with no `protect()` needed.
-- **Local network:** with "Skip local network" (default on), the tun routes are everything except the LAN subnets, link-local, multicast and broadcast. `RoutesExcluding` in `routes.go` computes them, because `Builder.excludeRoute` needs Android 13. LAN traffic bypasses app blocking and the log.
+- **Local network:** with "Skip local network" (default off), the tun routes are everything except the LAN subnets, link-local, multicast and broadcast. `RoutesExcluding` in `routes.go` computes them, because `Builder.excludeRoute` needs Android 13. LAN traffic bypasses app blocking and the log.
 - **IPv6:** the VPN only advertises v6 if the underlying network has a global v6 address. Otherwise Android blocks v6 for VPN users and apps fall back to v4 fast.
 - **Settings to engine:**
   - `Settings.configJson()` produces one JSON string, and Go parses it into an immutable `state`, swapped atomically.
