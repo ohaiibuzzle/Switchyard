@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [main]
+    branches: [senpai]
     tags: ["v[0-9]+.[0-9]+.[0-9]+"] # v0.1.3
   pull_request:
 
