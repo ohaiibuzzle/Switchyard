@@ -184,7 +184,7 @@ fun AppsScreen(s: Settings) {
     val blocked = s.blockedUids
     val proxied = s.routedUids
     val mode = s.routeMode
-    val proxyOn = mode == "proxy" || mode == "wg"
+    val proxyOn = mode == "proxy" || mode == "wg" || mode == "exit"
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         OutlinedTextField(
             query, { query = it }, Modifier.fillMaxWidth(),
@@ -195,7 +195,7 @@ fun AppsScreen(s: Settings) {
             FilterChip(showSystem, { showSystem = !showSystem }, label = { Text("System apps") })
         }
         if (proxyOn) {
-            Hint("Globe: route through ${if (mode == "wg") "WireGuard" else "proxy"}. None picked = all apps.")
+            Hint("Globe: route through ${when (mode) { "wg" -> "WireGuard"; "exit" -> "the exit node"; else -> "proxy" }}. None picked = all apps.")
             Spacer(Modifier.height(8.dp))
         }
         val list = apps
@@ -225,7 +225,7 @@ fun AppsScreen(s: Settings) {
 }
 
 fun routeSummary(s: Settings) = when (s.routeMode) {
-    "proxy" -> "Through a proxy"; "wg" -> "Through ${s.activeWg()?.name ?: "WireGuard"}"; else -> "Directly"
+    "proxy" -> "Through a proxy"; "wg" -> "Through ${s.activeWg()?.name ?: "WireGuard"}"; "exit" -> "Through a Tailscale exit node"; else -> "Directly"
 }
 
 fun adBlockSummary(s: Settings) = s.lists.size.let { if (s.adblock) "On · $it ${if (it == 1) "list" else "lists"}" else "Off" }
@@ -328,12 +328,14 @@ fun RouteGroup(s: Settings) {
             Triple("off", "Directly", null),
             Triple("proxy", "Through a proxy", "TCP only"),
             Triple("wg", "Through WireGuard", null),
+            Triple("exit", "Through a Tailscale exit node", if (s.tsOn) null else "Turn on Tailscale first"),
         ).forEach { (key, title, sub) ->
+            val enabled = key != "exit" || s.tsOn
             ListItem(
                 headlineContent = { Text(title) }, supportingContent = sub?.let { { Text(it) } },
-                trailingContent = { RadioButton(mode == key, null) },
+                trailingContent = { RadioButton(mode == key, null, enabled = enabled) },
                 colors = rowColors,
-                modifier = Modifier.selectable(mode == key, role = Role.RadioButton) { s.routeMode = key },
+                modifier = Modifier.selectable(mode == key, enabled, Role.RadioButton) { s.routeMode = key },
             )
         }
         if (mode == "proxy") Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -342,6 +344,22 @@ fun RouteGroup(s: Settings) {
             FilledTonalButton({ s.proxyUrl = proxy.trim() }) { Text("Save") }
         }
         if (mode == "wg") WgProfiles(s)
+        if (mode == "exit") ExitNodes(s)
     }
-    if (mode == "wg") Hint("DNS doesn't go through the tunnel.")
+    if (mode == "wg" || mode == "exit") Hint("DNS doesn't go through the tunnel.")
+}
+
+@Composable
+private fun ExitNodes(s: Settings) {
+    val nodes = rememberTsPeers().filter { it.exit }
+    if (nodes.isEmpty()) ListItem(headlineContent = { Text("No exit nodes on your tailnet yet") }, colors = rowColors)
+    nodes.forEach { p ->
+        ListItem(
+            headlineContent = { Text(p.name) },
+            supportingContent = { Text(p.detail) },
+            leadingContent = { RadioButton(p.ip == s.tsExitNode, null) },
+            colors = rowColors,
+            modifier = Modifier.selectable(p.ip == s.tsExitNode, role = Role.RadioButton) { s.tsExitNode = p.ip },
+        )
+    }
 }

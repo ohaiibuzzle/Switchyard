@@ -109,6 +109,7 @@ class Settings private constructor(ctx: Context) {
     var tsAuthKey by str("tsAuthKey")
     var tsDns by bool("tsDns")
     var tsOn by bool("tsOn")
+    var tsExitNode by str("tsExitNode") // Tailscale IP of the picked exit node
 
     /** How many traffic-disguise options are on. */
     fun tricksOn() = listOf(sniSplit, tlsFrag, hostTricks, blockQuic).count { it }
@@ -126,7 +127,7 @@ class Settings private constructor(ctx: Context) {
         putStringSet("blockDomains", blockDomains - domain)
     }
 
-    /** "off", "proxy" or "wg". Falls back to the pre-WireGuard proxyOn switch. */
+    /** "off", "proxy", "wg" or "exit" (a Tailscale exit node, needs tsOn). Falls back to the pre-WireGuard proxyOn switch. */
     var routeMode: String
         get() = read { getString("routeMode", null) ?: if (getBoolean("proxyOn", false)) "proxy" else "off" }
         set(v) = write { putString("routeMode", v) }
@@ -182,6 +183,9 @@ class Settings private constructor(ctx: Context) {
         put("tsControlUrl", tsControlUrl)
         put("tsAuthKey", tsAuthKey)
         put("tsDns", tsOn && tsDns)
+        val exit = tsOn && routeMode == "exit"
+        put("tsExit", exit)
+        put("tsExitNode", if (exit) tsExitNode else "")
     }.toString()
 
     /** Downloads lists that are missing or older than [maxAgeMs]. Returns per-URL errors. Blocking. */

@@ -300,8 +300,8 @@ func forwardUDP(s *state, c *gonet.UDPConn, uid int, dst netip.AddrPort) {
 	var out net.Conn
 	var err error
 	rt := "direct"
-	if ts := viaTS(s, dst); ts != nil {
-		rt = "tailscale"
+	if ts := viaTS(s, uid, dst); ts != nil {
+		rt = tsRoute(dst)
 		out, err = ts.dial("udp", dst)
 	} else if wg := viaWG(s, uid, dst); wg != nil {
 		rt = "wireguard"

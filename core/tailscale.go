@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/netip"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/miekg/dns"
 	"tailscale.com/envknob"
+	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/net/netmon"
 	"tailscale.com/tsnet"
@@ -36,6 +38,9 @@ var (
 type tsNode struct {
 	key string
 	srv *tsnet.Server
+	// The exit node last applied, valid once exitSet; only newState touches these, under the engine's mu.
+	exit    string
+	exitSet bool
 }
 
 func init() {
@@ -84,10 +89,45 @@ func tsFor(dir, hostname, controlURL, authKey string) (*tsNode, error) {
 	return t, nil
 }
 
+// dial connects through the tailnet. tsnet would quietly dial anything it has no route for
+// straight out, so refuse those: an exit node that's offline, gone or unpicked fails closed.
 func (t *tsNode) dial(network string, dst netip.AddrPort) (net.Conn, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return t.srv.Dial(ctx, network, dst.String())
+	d := t.srv.Sys().Dialer.Get()
+	if _, via, err := d.UserDialPlan(ctx, network, dst.String()); err != nil {
+		return nil, err
+	} else if !via {
+		return nil, errors.New("no Tailscale route (exit node offline or not picked?)")
+	}
+	return d.UserDial(ctx, network, dst.String())
+}
+
+// useExit sends the node's internet traffic through the exit node with this IP, or none for "".
+// The node is kept, so changing it doesn't drop tailnet connections or need a new login.
+func (t *tsNode) useExit(ip string) error {
+	if t.exitSet && ip == t.exit {
+		return nil
+	}
+	var a netip.Addr // zero clears it
+	if ip != "" {
+		var err error
+		if a, err = netip.ParseAddr(ip); err != nil {
+			return fmt.Errorf("exit node %q: %w", ip, err)
+		}
+	}
+	lc, err := t.srv.LocalClient()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	// Clearing the ID too: Tailscale swaps a set IP for the node's ID, which is what's saved.
+	if _, err := lc.EditPrefs(ctx, &ipn.MaskedPrefs{Prefs: ipn.Prefs{ExitNodeIP: a}, ExitNodeIPSet: true, ExitNodeIDSet: true}); err != nil {
+		return err
+	}
+	t.exit, t.exitSet = ip, true
+	return nil
 }
 
 // tsUpstream asks the tailnet's resolver (100.100.100.100: MagicDNS and the tailnet's DNS settings) and
@@ -156,6 +196,8 @@ type tsPeer struct {
 	IP     string `json:"ip"`
 	OS     string `json:"os"`
 	Online bool   `json:"online"`
+	Exit   bool   `json:"exit"`  // offers itself as an exit node
+	InUse  bool   `json:"inUse"` // our current exit node
 }
 
 // TsPeers is a JSON array of the devices this node can see, online ones first; "[]" when off.
@@ -186,7 +228,7 @@ func peerList(st *ipnstate.Status) []tsPeer {
 		if len(p.TailscaleIPs) > 0 {
 			ip = p.TailscaleIPs[0].String()
 		}
-		out = append(out, tsPeer{name, ip, p.OS, p.Online})
+		out = append(out, tsPeer{name, ip, p.OS, p.Online, p.ExitNodeOption, p.ExitNode})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Online != out[j].Online {

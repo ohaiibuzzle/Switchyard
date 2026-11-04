@@ -10,7 +10,7 @@ What the app does:
 - **Anti-censorship.** Optional tricks: split the TLS ClientHello inside the SNI, fragment the TLS record, mangle the HTTP Host header, block QUIC.
 - **Activity log and your rules.** An optional in-memory log records each decision (app, domain, IP, allow/block, and why). Your own domain allow/block rules can be added straight from a log entry.
 - **Optional upstream.** Traffic can go through a SOCKS5 or HTTP CONNECT proxy (TCP only), or through userspace WireGuard (TCP and UDP). Saved WireGuard profiles can be switched live.
-- **Tailscale.** An embedded tsnet node reaches tailnet IPs (100.64.0.0/10, fd7a:115c:a1e0::/48) for every app. It's its own switch: tailnet IPs go to Tailscale first, everything else follows the route mode, so it works alongside WireGuard or a proxy. Optional "Tailscale DNS" asks the tailnet's resolver first and falls back to the chosen provider.
+- **Tailscale.** An embedded tsnet node reaches tailnet IPs (100.64.0.0/10, fd7a:115c:a1e0::/48) for every app. It's its own switch: tailnet IPs go to Tailscale first, everything else follows the route mode, so it works alongside WireGuard or a proxy. Route mode "exit" sends the routed apps' internet through a Tailscale exit node instead; `tsNode.dial` refuses anything tsnet has no Tailscale route for, so a missing or offline exit node fails closed rather than going direct. Optional "Tailscale DNS" asks the tailnet's resolver first and falls back to the chosen provider.
 
 ## Layout
 

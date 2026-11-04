@@ -12,7 +12,7 @@ It works by acting as a local VPN, so every app's traffic passes through it firs
 - **See what's happening.** The Activity screen shows which apps connect where and what got blocked. From there you can always allow or always block a site.
 - **Get around censorship.** Optional tricks that make it harder for networks to see or block the sites you visit.
 - **Route through a proxy or WireGuard.** Send all apps, or just the ones you choose.
-- **Stay on your Tailscale network.** Sign in once and every app can reach your tailnet devices, with no need for the Tailscale app.
+- **Stay on your Tailscale network.** Sign in once and every app can reach your tailnet devices, with no need for the Tailscale app. You can also send apps through one of your exit nodes.
 
 ## Getting started
 
