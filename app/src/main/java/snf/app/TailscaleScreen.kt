@@ -20,12 +20,10 @@ import org.json.JSONObject
 
 @Composable
 fun TailscaleScreen(s: Settings) {
-    val on = s.routeMode == "ts"
+    val on = s.tsOn
     ScreenColumn {
         Group {
-            SwitchRow(Icons.Rounded.Hub, "Use Tailscale", "Reach your tailnet. Proxy and WireGuard pause.", on) { v ->
-                if (v) { s.routeBeforeTs = s.routeMode; s.routeMode = "ts" } else s.routeMode = s.routeBeforeTs
-            }
+            SwitchRow(Icons.Rounded.Hub, "Use Tailscale", "Reach your tailnet devices", on) { s.tsOn = it }
             if (on) TsStatus()
         }
         if (on) TsAdvanced(s)

@@ -109,7 +109,7 @@ fun DnsScreen(s: Settings) {
     var url by remember(saved) { mutableStateOf(saved) }
     var boot by remember(saved) { mutableStateOf(s.dnsBootstrap) }
     ScreenColumn {
-        if (s.routeMode == "ts") Group {
+        if (s.tsOn) Group {
             SwitchRow(Icons.Rounded.Hub, "Use Tailscale DNS", "Your tailnet answers first; the provider below covers the rest", s.tsDns) { v ->
                 s.tsDns = v
             }
@@ -225,7 +225,7 @@ fun AppsScreen(s: Settings) {
 }
 
 fun routeSummary(s: Settings) = when (s.routeMode) {
-    "proxy" -> "Through a proxy"; "wg" -> "Through ${s.activeWg()?.name ?: "WireGuard"}"; "ts" -> "Through Tailscale"; else -> "Directly"
+    "proxy" -> "Through a proxy"; "wg" -> "Through ${s.activeWg()?.name ?: "WireGuard"}"; else -> "Directly"
 }
 
 fun adBlockSummary(s: Settings) = s.lists.size.let { if (s.adblock) "On · $it ${if (it == 1) "list" else "lists"}" else "Off" }
@@ -323,12 +323,6 @@ fun RouteGroup(s: Settings) {
     val mode = s.routeMode
     val savedProxy = s.proxyUrl
     var proxy by remember(savedProxy) { mutableStateOf(savedProxy) }
-    if (mode == "ts") {
-        Group {
-            ListItem(headlineContent = { Text("Through Tailscale") }, supportingContent = { Text("Proxy and WireGuard are off while Tailscale is on") }, colors = rowColors)
-        }
-        return
-    }
     Group {
         listOf(
             Triple("off", "Directly", null),

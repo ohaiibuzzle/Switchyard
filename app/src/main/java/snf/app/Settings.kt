@@ -64,7 +64,12 @@ class Settings private constructor(ctx: Context) {
     // Held strongly: SharedPreferences only keeps a weak reference to its listeners.
     // Every write recomposes readers and pushes the new config into a running engine.
     private val onChange = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> version++; FilterVpnService.reconfigure(app) }
-    init { prefs.registerOnSharedPreferenceChangeListener(onChange) }
+    init {
+        // Tailscale used to be routeMode "ts", which paused WireGuard and proxy; it's its own switch now.
+        if (prefs.getString("routeMode", null) == "ts") prefs.edit().putBoolean("tsOn", true)
+            .putString("routeMode", prefs.getString("routeBeforeTs", "off")).remove("routeBeforeTs").apply()
+        prefs.registerOnSharedPreferenceChangeListener(onChange)
+    }
 
     private fun <T> read(f: SharedPreferences.() -> T): T { version; return prefs.f() }
     private fun write(f: SharedPreferences.Editor.() -> Unit) = prefs.edit().apply(f).apply()
@@ -103,7 +108,7 @@ class Settings private constructor(ctx: Context) {
     var tsControlUrl by str("tsControlUrl")
     var tsAuthKey by str("tsAuthKey")
     var tsDns by bool("tsDns")
-    var routeBeforeTs by str("routeBeforeTs", "off") // restored when Tailscale is switched off
+    var tsOn by bool("tsOn")
 
     /** How many traffic-disguise options are on. */
     fun tricksOn() = listOf(sniSplit, tlsFrag, hostTricks, blockQuic).count { it }
@@ -121,7 +126,7 @@ class Settings private constructor(ctx: Context) {
         putStringSet("blockDomains", blockDomains - domain)
     }
 
-    /** "off", "proxy", "wg" or "ts" (Tailscale); one at a time. Falls back to the pre-WireGuard proxyOn switch. */
+    /** "off", "proxy" or "wg". Falls back to the pre-WireGuard proxyOn switch. */
     var routeMode: String
         get() = read { getString("routeMode", null) ?: if (getBoolean("proxyOn", false)) "proxy" else "off" }
         set(v) = write { putString("routeMode", v) }
@@ -171,13 +176,12 @@ class Settings private constructor(ctx: Context) {
         put("allowDomains", JSONArray(allowDomains.toList()))
         put("blockDomains", JSONArray(blockDomains.toList()))
         put("log", logOn)
-        val ts = routeMode == "ts"
-        put("tsDir", if (ts) File(app.filesDir, "tailscale").path else "")
+        put("tsDir", if (tsOn) File(app.filesDir, "tailscale").path else "")
         // Like Tailscale's app: the name set in Android's About phone, else the model; control turns it into a DNS label.
         put("tsHostname", android.provider.Settings.Global.getString(app.contentResolver, android.provider.Settings.Global.DEVICE_NAME) ?: android.os.Build.MODEL)
         put("tsControlUrl", tsControlUrl)
         put("tsAuthKey", tsAuthKey)
-        put("tsDns", ts && tsDns)
+        put("tsDns", tsOn && tsDns)
     }.toString()
 
     /** Downloads lists that are missing or older than [maxAgeMs]. Returns per-URL errors. Blocking. */

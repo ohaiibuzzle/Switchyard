@@ -66,14 +66,14 @@ fun HomeScreen(s: Settings, open: (Page) -> Unit, goTo: (Tab) -> Unit) {
         val preset = DNS_PRESETS.firstOrNull { it.url == s.dnsUrl }
         val privacy = listOfNotNull(
             if (s.tricksOn() > 0) "Disguise on" else null,
-            if (s.routeMode == "proxy" || s.routeMode == "wg") routeSummary(s) else null, // Tailscale has its own row
+            if (s.routeMode != "off") routeSummary(s) else null,
         ).joinToString(" · ").ifEmpty { "Off" }
         Group {
-            val dns = (preset?.let { "${it.name} · ${dnsKind(it.url)}" } ?: "Custom server").let { if (s.routeMode == "ts" && s.tsDns) "Tailscale, then $it" else it }
+            val dns = (preset?.let { "${it.name} · ${dnsKind(it.url)}" } ?: "Custom server").let { if (s.tsOn && s.tsDns) "Tailscale, then $it" else it }
             NavRow(Icons.Rounded.Dns, "Private DNS", dns) { goTo(Tab.Dns) }
             NavRow(Icons.Rounded.Apps, "App access", s.blockedUids.size.let { if (it == 0) "All apps allowed" else "$it ${if (it == 1) "app" else "apps"} blocked" }) { goTo(Tab.Apps) }
             NavRow(Icons.Rounded.Block, "Ad blocking", adBlockSummary(s)) { open(Page.AdBlock) }
-            NavRow(Icons.Rounded.Hub, "Tailscale", if (s.routeMode == "ts") "On" else "Off") { goTo(Tab.Tailscale) }
+            NavRow(Icons.Rounded.Hub, "Tailscale", if (s.tsOn) "On" else "Off") { goTo(Tab.Tailscale) }
             NavRow(Icons.Rounded.VisibilityOff, "Privacy", privacy) { goTo(Tab.Privacy) }
         }
         Group {

@@ -30,7 +30,7 @@ type config struct {
 	AllowDomains []string `json:"allowDomains"` // user rules, subdomains included
 	BlockDomains []string `json:"blockDomains"`
 	Log          bool     `json:"log"`
-	TSDir        string   `json:"tsDir"`        // Tailscale state dir; empty = off. The app never sends it with WGConf or ProxyURL.
+	TSDir        string   `json:"tsDir"`        // Tailscale state dir; empty = off. Tailnet IPs go here before WireGuard or proxy.
 	TSHostname   string   `json:"tsHostname"`   // the device's name, as Tailscale's own app uses
 	TSControlURL string   `json:"tsControlUrl"` // empty = Tailscale's own servers
 	TSAuthKey    string   `json:"tsAuthKey"`
