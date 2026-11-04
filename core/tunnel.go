@@ -58,8 +58,7 @@ func Start(fd, mtu int, cfg string, c Callback) error {
 	defer func() {
 		if !started { // Stop() skips cleanup while stk is nil, so undo what newState brought up
 			s.up.Close()
-			wgFor("")
-			tsFor("", "", "")
+			closeTunnels()
 		}
 	}()
 	if err := unix.SetNonblock(fd, true); err != nil {
@@ -119,9 +118,14 @@ func Stop() {
 	stk = nil
 	swap(nil)
 	ClearEvents()
+	closeTunnels()
+	logf("stopped")
+}
+
+// closeTunnels stops the WireGuard and Tailscale nodes, which outlive any one state snapshot.
+func closeTunnels() {
 	wgFor("")
 	tsFor("", "", "")
-	logf("stopped")
 }
 
 func addrPort(a tcpip.Address, p uint16) netip.AddrPort {

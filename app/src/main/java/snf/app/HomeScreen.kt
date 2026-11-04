@@ -66,7 +66,7 @@ fun HomeScreen(s: Settings, open: (Page) -> Unit, goTo: (Tab) -> Unit) {
         val preset = DNS_PRESETS.firstOrNull { it.url == s.dnsUrl }
         val privacy = listOfNotNull(
             if (s.tricksOn() > 0) "Disguise on" else null,
-            when (s.routeMode) { "wg" -> "via ${s.activeWg()?.name ?: "WireGuard"}"; "proxy" -> "via proxy"; else -> null },
+            if (s.routeMode == "proxy" || s.routeMode == "wg") routeSummary(s) else null, // Tailscale has its own row
         ).joinToString(" · ").ifEmpty { "Off" }
         Group {
             val dns = (preset?.let { "${it.name} · ${dnsKind(it.url)}" } ?: "Custom server").let { if (s.routeMode == "ts" && s.tsDns) "Tailscale, then $it" else it }

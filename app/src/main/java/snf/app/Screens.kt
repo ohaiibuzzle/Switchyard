@@ -224,6 +224,10 @@ fun AppsScreen(s: Settings) {
     }
 }
 
+fun routeSummary(s: Settings) = when (s.routeMode) {
+    "proxy" -> "Through a proxy"; "wg" -> "Through ${s.activeWg()?.name ?: "WireGuard"}"; "ts" -> "Through Tailscale"; else -> "Directly"
+}
+
 fun adBlockSummary(s: Settings) = s.lists.size.let { if (s.adblock) "On · $it ${if (it == 1) "list" else "lists"}" else "Off" }
 
 @Composable
@@ -280,14 +284,11 @@ fun AdBlockScreen(s: Settings) = ScreenColumn {
 
 @Composable
 fun PrivacyScreen(s: Settings, open: (Page) -> Unit) {
-    val route = when (s.routeMode) {
-        "proxy" -> "Through a proxy"; "wg" -> "Through ${s.activeWg()?.name ?: "WireGuard"}"; "ts" -> "Through Tailscale"; else -> "Directly"
-    }
     ScreenColumn {
         Group {
             NavRow(Icons.Rounded.Block, "Ad blocking", adBlockSummary(s)) { open(Page.AdBlock) }
             NavRow(Icons.Rounded.Lock, "Disguise traffic", s.tricksOn().let { if (it == 0) "Off" else "$it on" }) { open(Page.Disguise) }
-            NavRow(Icons.Rounded.AltRoute, "Route traffic", route) { open(Page.Route) }
+            NavRow(Icons.Rounded.AltRoute, "Route traffic", routeSummary(s)) { open(Page.Route) }
         }
         Group {
             SwitchRow(Icons.Rounded.Router, "Skip local network", "Casting and sharing bypass the filter. Applies on restart.", s.skipLan) { v ->
