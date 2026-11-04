@@ -71,7 +71,10 @@ fun HomeScreen(s: Settings, open: (Page) -> Unit, goTo: (Tab) -> Unit) {
         Group {
             val dns = (preset?.let { "${it.name} · ${dnsKind(it.url)}" } ?: "Custom server").let { if (s.tsOn && s.tsDns) "Tailscale, then $it" else it }
             NavRow(Icons.Rounded.Dns, "Private DNS", dns) { goTo(Tab.Dns) }
-            NavRow(Icons.Rounded.Apps, "App access", s.blockedUids.size.let { if (it == 0) "All apps allowed" else "$it ${if (it == 1) "app" else "apps"} blocked" }) { goTo(Tab.Apps) }
+            NavRow(Icons.Rounded.Apps, "App access", listOfNotNull(
+                s.blockedUids.size.takeIf { it > 0 }?.let { "$it blocked" },
+                s.bypassPkgs.size.takeIf { it > 0 }?.let { "$it bypassed" },
+            ).joinToString(" · ").ifEmpty { "All apps allowed" }) { goTo(Tab.Apps) }
             NavRow(Icons.Rounded.Block, "Ad blocking", adBlockSummary(s)) { open(Page.AdBlock) }
             NavRow(Icons.Rounded.Hub, "Tailscale", if (s.tsOn) "On" else "Off") { goTo(Tab.Tailscale) }
             NavRow(Icons.Rounded.VisibilityOff, "Privacy", privacy) { goTo(Tab.Privacy) }

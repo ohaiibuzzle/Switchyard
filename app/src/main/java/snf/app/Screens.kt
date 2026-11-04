@@ -166,10 +166,12 @@ fun AppIcon(pkg: String) {
     img?.let { Image(it, null, m) } ?: Box(m)
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppsScreen(s: Settings) {
     val ctx = LocalContext.current
     var apps by remember { mutableStateOf<List<AppEntry>?>(null) }
+    var picked by remember { mutableStateOf<AppEntry?>(null) }
     var query by remember { mutableStateOf("") }
     var showSystem by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -182,6 +184,7 @@ fun AppsScreen(s: Settings) {
         }
     }
     val blocked = s.blockedUids
+    val bypassed = s.bypassPkgs
     val proxied = s.routedUids
     val mode = s.routeMode
     val proxyOn = mode != "off"
@@ -203,23 +206,52 @@ fun AppsScreen(s: Settings) {
         else LazyColumn(Modifier.clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))) {
             items(list.filter { (showSystem || !it.system) && (it.label.contains(query, true) || it.pkg.contains(query, true)) }, key = { it.pkg }) { a ->
                 val uid = a.uid
-                val allowed = uid !in blocked
+                val bypass = a.pkg in bypassed
                 ListItem(
                     headlineContent = { Text(a.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    supportingContent = { Text(if (allowed) a.pkg else "No internet access", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    supportingContent = {
+                        Text(if (bypass) "Bypasses Switchyard" else if (uid in blocked) "No internet access" else a.pkg, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    },
                     leadingContent = { AppIcon(a.pkg) },
                     trailingContent = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (proxyOn) IconToggleButton(uid in proxied, { s.routedUids = s.routedUids.toggle(uid) }) {
-                                Icon(Icons.Rounded.Public, "Route through tunnel")
-                            }
-                            Switch(allowed, null)
+                        if (proxyOn && !bypass) IconToggleButton(uid in proxied, { s.routedUids = s.routedUids.toggle(uid) }) {
+                            Icon(Icons.Rounded.Public, "Route through tunnel")
                         }
                     },
                     colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    modifier = Modifier.toggleable(allowed, role = Role.Switch) { s.blockedUids = s.blockedUids.toggle(uid) },
+                    modifier = Modifier.clickable { picked = a },
                 )
             }
+        }
+    }
+
+    picked?.let { a ->
+        val close = { picked = null }
+        val bypass = a.pkg in bypassed
+        val isBlocked = !bypass && a.uid in blocked
+        // Blocked and bypass are exclusive: bypassed traffic never reaches us, so it can't be blocked.
+        fun set(block: Boolean, skip: Boolean) {
+            s.blockedUids = if (block) s.blockedUids + a.uid else s.blockedUids - a.uid
+            s.bypassPkgs = if (skip) s.bypassPkgs + a.pkg else s.bypassPkgs - a.pkg
+            close()
+        }
+        ModalBottomSheet(onDismissRequest = close) {
+            ListItem(headlineContent = { Text(a.label) }, supportingContent = { Text(a.pkg) }, leadingContent = { AppIcon(a.pkg) })
+            HorizontalDivider()
+            listOf(
+                Triple("Allowed", null, !bypass && !isBlocked) to { set(false, false) },
+                Triple("Blocked", "No internet access", isBlocked) to { set(true, false) },
+                Triple("Bypass", "Skips the VPN: no DNS, filtering or log. Restarts the VPN.", bypass) to { set(false, true) },
+            ).forEach { (t, onPick) ->
+                val (title, sub, on) = t
+                ListItem(
+                    headlineContent = { Text(title) },
+                    supportingContent = sub?.let { { Text(it) } },
+                    trailingContent = { RadioButton(on, null) },
+                    modifier = Modifier.selectable(on, role = Role.RadioButton, onClick = onPick),
+                )
+            }
+            Spacer(Modifier.height(24.dp))
         }
     }
 }

@@ -65,7 +65,8 @@ class Settings private constructor(ctx: Context) {
     // Every write recomposes readers and pushes the new config into a running engine.
     private val onChange = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         version++
-        FilterVpnService.reconfigure(app)
+        // The excluded-app list is only read when the tun is built, so that needs a restart.
+        if (key == "bypass") FilterVpnService.restart(app) else FilterVpnService.reconfigure(app)
         if (key == "lists" || key == "adblock") FilterVpnService.syncLists(app) // fetch a newly enabled list now, not next hour
     }
     init {
@@ -97,6 +98,7 @@ class Settings private constructor(ctx: Context) {
     var blockBypass by bool("blockBypass", true)
     var blockedUids by uids("blocked")
     var routedUids by uids("proxied") // apps sent via WireGuard/proxy; empty = all
+    var bypassPkgs by strs("bypass") // packages kept out of the tun entirely; packages, since that's what Builder takes
     var adblock by bool("adblock")
     var lists by strs("lists")
     var sniSplit by bool("sniSplit")

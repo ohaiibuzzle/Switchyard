@@ -7,10 +7,12 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.graphics.drawable.Icon
 import android.net.VpnService
+import android.os.ParcelFileDescriptor
 import android.service.quicksettings.TileService
 import android.util.Log
 import java.net.InetAddress
@@ -28,6 +30,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class FilterVpnService : VpnService(), snf.core.Callback {
     companion object {
         const val STOP = "snf.STOP"
+        const val RESTART = "snf.RESTART"
         // Compose state, so the UI observes these instead of polling.
         var starting by mutableStateOf(false)
             private set
@@ -56,6 +59,10 @@ class FilterVpnService : VpnService(), snf.core.Callback {
 
         fun start(ctx: Context) = ctx.startForegroundService(Intent(ctx, FilterVpnService::class.java))
         fun stop(ctx: Context) = ctx.startService(Intent(ctx, FilterVpnService::class.java).setAction(STOP))
+        /** Rebuilds the tun and engine, for settings only read at establish(). No-op when stopped. */
+        fun restart(ctx: Context) {
+            if (running || starting) ctx.startService(Intent(ctx, FilterVpnService::class.java).setAction(RESTART))
+        }
 
         private val reconfigurePending = AtomicBoolean(false)
 
@@ -81,6 +88,10 @@ class FilterVpnService : VpnService(), snf.core.Callback {
             engine.execute { shutdown() }
             return START_NOT_STICKY
         }
+        if (intent?.action == RESTART) {
+            engine.execute { if (running) relaunch() } // a start still queued reads the latest settings itself
+            return START_STICKY
+        }
         cm = getSystemService(ConnectivityManager::class.java)
         startForeground(1, notification(active = true), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         if (!running && !starting) {
@@ -93,19 +104,7 @@ class FilterVpnService : VpnService(), snf.core.Callback {
     private fun launch() {
         val settings = Settings.of(this)
         try {
-            // shortcut: the local network is read once at start, like v6; restart the VPN after a network change.
-            val skip = if (settings.skipLan) localNets() else ""
-            val b = Builder()
-                .setSession(getString(R.string.app_name))
-                .setMtu(MTU)
-                .addAddress("10.111.0.1", 32)
-                .routes("0.0.0.0/0", skip)
-                .addDnsServer("10.111.0.2") // any :53 is intercepted; this is just what apps are told
-                .addDisallowedApplication(packageName) // our own upstream sockets bypass the tunnel
-            // Without v6 config Android blocks v6 for VPN apps, so they fall back to v4 instead of
-            // trying v6 we can't reach.
-            if (hasGlobalV6()) b.addAddress("fd00:111::1", 128).routes("::/0", skip).addDnsServer("fd00:111::2")
-            val pfd = b.establish() ?: error("VPN permission revoked")
+            val pfd = establish(settings)
             snf.core.Core.start(pfd.detachFd().toLong(), MTU.toLong(), settings.configJson(), this)
             lastError = null
             // Only true once our tunnel is established. shortcut: read at start, so toggling Always-on shows after a restart.
@@ -122,6 +121,41 @@ class FilterVpnService : VpnService(), snf.core.Callback {
         } finally {
             starting = false
         }
+    }
+
+    /** Only call on [engine]. The new tun replaces the old one before the engine lets go of it, so nothing leaks in between. */
+    // shortcut: a full engine stop/start drops open connections, WireGuard/Tailscale sessions and the log; hot-swap the fd if that hurts.
+    private fun relaunch() {
+        val settings = Settings.of(this)
+        try {
+            val pfd = establish(settings)
+            snf.core.Core.stop()
+            snf.core.Core.start(pfd.detachFd().toLong(), MTU.toLong(), settings.configJson(), this)
+            lastError = null
+        } catch (e: Exception) {
+            lastError = e.message
+            Log.e("snf", "restart", e)
+            shutdown()
+        }
+    }
+
+    private fun establish(settings: Settings): ParcelFileDescriptor {
+        // shortcut: the local network is read once at start, like v6; restart the VPN after a network change.
+        val skip = if (settings.skipLan) localNets() else ""
+        val b = Builder()
+            .setSession(getString(R.string.app_name))
+            .setMtu(MTU)
+            .addAddress("10.111.0.1", 32)
+            .routes("0.0.0.0/0", skip)
+            .addDnsServer("10.111.0.2") // any :53 is intercepted; this is just what apps are told
+            .addDisallowedApplication(packageName) // our own upstream sockets bypass the tunnel
+        settings.bypassPkgs.forEach {
+            try { b.addDisallowedApplication(it) } catch (_: PackageManager.NameNotFoundException) {} // uninstalled since
+        }
+        // Without v6 config Android blocks v6 for VPN apps, so they fall back to v4 instead of
+        // trying v6 we can't reach.
+        if (hasGlobalV6()) b.addAddress("fd00:111::1", 128).routes("::/0", skip).addDnsServer("fd00:111::2")
+        return b.establish() ?: error("VPN permission revoked")
     }
 
     /** Everything in [root] except [skip]; computed in Go because Builder.excludeRoute needs Android 13. */
