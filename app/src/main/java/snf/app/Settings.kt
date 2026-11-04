@@ -103,6 +103,7 @@ class Settings private constructor(ctx: Context) {
     var tsControlUrl by str("tsControlUrl")
     var tsAuthKey by str("tsAuthKey")
     var tsDns by bool("tsDns")
+    var routeBeforeTs by str("routeBeforeTs", "off") // restored when Tailscale is switched off
 
     /** How many traffic-disguise options are on. */
     fun tricksOn() = listOf(sniSplit, tlsFrag, hostTricks, blockQuic).count { it }

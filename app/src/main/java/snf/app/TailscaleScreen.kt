@@ -23,8 +23,8 @@ fun TailscaleScreen(s: Settings) {
     val on = s.routeMode == "ts"
     ScreenColumn {
         Group {
-            SwitchRow(Icons.Rounded.Hub, "Use Tailscale", "Reach your tailnet. Proxy and WireGuard turn off.", on) { v ->
-                s.routeMode = if (v) "ts" else "off"
+            SwitchRow(Icons.Rounded.Hub, "Use Tailscale", "Reach your tailnet. Proxy and WireGuard pause.", on) { v ->
+                if (v) { s.routeBeforeTs = s.routeMode; s.routeMode = "ts" } else s.routeMode = s.routeBeforeTs
             }
             if (on) TsStatus()
         }
@@ -44,9 +44,10 @@ private fun TsStatus() {
     val state = st.optString("state", "Off")
     val url = st.optString("authUrl")
     fun open(u: String) = ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(u)))
+    LaunchedEffect(state) { err = null; if (state != "NeedsLogin") openWhenReady = false }
     LaunchedEffect(url, openWhenReady) { if (openWhenReady && url.isNotEmpty()) { openWhenReady = false; open(url) } }
-    fun call(f: () -> Unit) = scope.launch {
-        err = try { withContext(Dispatchers.IO) { f() }; null } catch (e: Exception) { e.message }
+    fun call(onOk: () -> Unit = {}, f: () -> Unit) = scope.launch {
+        err = try { withContext(Dispatchers.IO) { f() }; onOk(); null } catch (e: Exception) { e.message }
     }
 
     val text = when {
@@ -66,8 +67,8 @@ private fun TsStatus() {
             Text(text, style = MaterialTheme.typography.bodyMedium)
         }
         when (state) {
-            // The node asks for a login URL on start; after a sign-out we ask again and open it once it arrives.
-            "NeedsLogin" -> FilledTonalButton({ if (url.isNotEmpty()) open(url) else { openWhenReady = true; call { snf.core.Core.tsLogin() } } }) { Text("Sign in") }
+            // tsLogin re-sends a login that's still in progress, or starts a fresh one if the old URL expired.
+            "NeedsLogin" -> FilledTonalButton({ call(onOk = { openWhenReady = true }) { snf.core.Core.tsLogin() } }) { Text("Sign in") }
             "Running" -> TextButton({ call { snf.core.Core.tsLogout() } }) { Text("Sign out") }
         }
     }

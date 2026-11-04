@@ -54,6 +54,14 @@ func Start(fd, mtu int, cfg string, c Callback) error {
 	if err != nil {
 		return err
 	}
+	started := false
+	defer func() {
+		if !started { // Stop() skips cleanup while stk is nil, so undo what newState brought up
+			s.up.Close()
+			wgFor("")
+			tsFor("", "", "")
+		}
+	}()
 	if err := unix.SetNonblock(fd, true); err != nil {
 		return err
 	}
@@ -78,6 +86,7 @@ func Start(fd, mtu int, cfg string, c Callback) error {
 	st.SetTransportProtocolHandler(udp.ProtocolNumber, udp.NewForwarder(st, onUDP).HandlePacket)
 	swap(s)
 	stk, tun = st, fd
+	started = true
 	logf("started, upstream %s", s.cfg.DNSUpstream)
 	return nil
 }

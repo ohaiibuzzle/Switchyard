@@ -9,6 +9,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
@@ -22,8 +23,8 @@ import (
 // excluded from the VPN, the same as WireGuard's.
 
 var (
-	tsMu  sync.Mutex
-	tsCur *tsNode
+	tsMu  sync.Mutex             // serialises tsFor, which can block while a node starts
+	tsCur atomic.Pointer[tsNode] // read lock-free so the status poll doesn't wait on a start
 	// shortcut: only the CGNAT and ULA tailnet ranges, not subnet routes; read PrimaryRoutes from status if asked.
 	tailnet4 = netip.MustParsePrefix("100.64.0.0/10")
 	tailnet6 = netip.MustParsePrefix("fd7a:115c:a1e0::/48")
@@ -49,12 +50,13 @@ func tsFor(dir, controlURL, authKey string) (*tsNode, error) {
 	key := dir + "\n" + controlURL + "\n" + authKey
 	tsMu.Lock()
 	defer tsMu.Unlock()
-	if tsCur != nil && tsCur.key == key {
-		return tsCur, nil
+	if t := tsCur.Load(); t != nil && t.key == key {
+		return t, nil
 	}
-	if tsCur != nil {
-		tsCur.srv.Close()
-		tsCur = nil
+	// shortcut: the old node closes before the new one starts (they'd share a state dir), so a failed
+	// start leaves Tailscale off until the next change or restart; Start rarely fails, as login is async.
+	if t := tsCur.Swap(nil); t != nil {
+		t.srv.Close()
 	}
 	if dir == "" {
 		return nil, nil
@@ -74,8 +76,9 @@ func tsFor(dir, controlURL, authKey string) (*tsNode, error) {
 		srv.Close()
 		return nil, err
 	}
-	tsCur = &tsNode{key: key, srv: srv}
-	return tsCur, nil
+	t := &tsNode{key: key, srv: srv}
+	tsCur.Store(t)
+	return t, nil
 }
 
 func (t *tsNode) dial(network string, dst netip.AddrPort) (net.Conn, error) {
@@ -93,7 +96,9 @@ type tsUpstream struct {
 }
 
 func (u tsUpstream) Exchange(ctx context.Context, req *dns.Msg) (*dns.Msg, error) {
-	if r, err := u.ask(ctx, req); err == nil && r.Rcode != dns.RcodeServerFailure && r.Rcode != dns.RcodeRefused {
+	tctx, cancel := context.WithTimeout(ctx, 2*time.Second) // a starting or stuck node mustn't hang every lookup
+	defer cancel()
+	if r, err := u.ask(tctx, req); err == nil && r.Rcode != dns.RcodeServerFailure && r.Rcode != dns.RcodeRefused {
 		return r, nil
 	}
 	return u.next.Exchange(ctx, req)
@@ -123,16 +128,10 @@ func (t *tsNode) queryDNS(ctx context.Context, req *dns.Msg) (*dns.Msg, error) {
 func (tsUpstream) Address() string { return "tailscale" }
 func (u tsUpstream) Close() error  { return u.next.Close() } // the node itself outlives the snapshot
 
-func tsCurrent() *tsNode {
-	tsMu.Lock()
-	defer tsMu.Unlock()
-	return tsCur
-}
-
 // TsStatus is JSON {state, authUrl, ip}; state is "Off" when Tailscale isn't running.
 func TsStatus() string {
 	out := map[string]string{"state": "Off"}
-	if t := tsCurrent(); t != nil {
+	if t := tsCur.Load(); t != nil {
 		out["state"] = "Starting"
 		if lc, err := t.srv.LocalClient(); err == nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -171,7 +170,7 @@ func TsLogout() error {
 }
 
 func tsLocal(f func(context.Context, *tsNode) error) error {
-	t := tsCurrent()
+	t := tsCur.Load()
 	if t == nil {
 		return errors.New("tailscale is off")
 	}

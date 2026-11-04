@@ -36,6 +36,9 @@ func TestRoutesExcluding(t *testing.T) {
 	if got, _ := RoutesExcluding("0.0.0.0/0", "10.0.0.0/8"); got != "0.0.0.0/0" {
 		t.Errorf("a LAN covering our DNS address must not be skipped: %q", got)
 	}
+	if got, _ := RoutesExcluding("0.0.0.0/0", "100.64.0.0/10 100.100.0.0/16"); got != "0.0.0.0/0" {
+		t.Errorf("a CGNAT network overlapping the tailnet must not be skipped: %q", got)
+	}
 	if got, _ := RoutesExcluding("::/0", ""); got != "::/0" {
 		t.Errorf("no exclusions: %q", got)
 	}

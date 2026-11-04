@@ -8,8 +8,7 @@ import (
 
 // RoutesExcluding returns root minus the excluded prefixes as newline-separated CIDRs, for
 // VpnService routes. Builder.excludeRoute needs Android 13 and we support 10.
-// Unparseable or out-of-family exclusions are ignored, and so is any that covers our own tun
-// addresses (a 10.0.0.0/8 LAN would otherwise swallow the DNS address apps are given).
+// Unparseable or out-of-family exclusions are ignored, and so is any that keepRouted rejects.
 func RoutesExcluding(root, excl string) (string, error) {
 	r, err := netip.ParsePrefix(root)
 	if err != nil {
@@ -17,7 +16,7 @@ func RoutesExcluding(root, excl string) (string, error) {
 	}
 	var ex []netip.Prefix
 	for _, s := range strings.Fields(excl) {
-		if p, err := netip.ParsePrefix(s); err == nil && p.Addr().Is4() == r.Addr().Is4() && !p.Contains(tunDNS4) && !p.Contains(tunDNS6) {
+		if p, err := netip.ParsePrefix(s); err == nil && p.Addr().Is4() == r.Addr().Is4() && keepRouted(p) {
 			ex = append(ex, p.Masked())
 		}
 	}
@@ -30,6 +29,12 @@ func RoutesExcluding(root, excl string) (string, error) {
 
 // The DNS addresses FilterVpnService announces on the tun; keep them in sync.
 var tunDNS4, tunDNS6 = netip.MustParseAddr("10.111.0.2"), netip.MustParseAddr("fd00:111::2")
+
+// keepRouted says an exclusion would swallow addresses that must stay in the tun: our DNS
+// address, or the tailnet ranges (carrier-grade NAT networks also live in 100.64.0.0/10).
+func keepRouted(p netip.Prefix) bool {
+	return !p.Contains(tunDNS4) && !p.Contains(tunDNS6) && !p.Overlaps(tailnet4) && !p.Overlaps(tailnet6)
+}
 
 // complement splits p in halves until each piece is either clear of every exclusion or inside one.
 func complement(p netip.Prefix, ex []netip.Prefix) []netip.Prefix {
