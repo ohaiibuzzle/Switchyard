@@ -5,10 +5,13 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
+import android.graphics.drawable.Icon
 import android.net.VpnService
+import android.service.quicksettings.TileService
 import android.util.Log
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -62,7 +65,7 @@ class FilterVpnService : VpnService(), snf.core.Callback {
             return START_NOT_STICKY
         }
         cm = getSystemService(ConnectivityManager::class.java)
-        startForeground(1, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        startForeground(1, notification(active = true), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         if (!running && !starting) {
             starting = true
             engine.execute { launch() }
@@ -92,6 +95,7 @@ class FilterVpnService : VpnService(), snf.core.Callback {
             // Only true once our tunnel is established. shortcut: read at start, so toggling Always-on shows after a restart.
             alwaysOn = isAlwaysOn
             running = true
+            refreshTile()
         } catch (e: Exception) {
             lastError = e.message
             Log.e("snf", "start", e)
@@ -124,9 +128,14 @@ class FilterVpnService : VpnService(), snf.core.Callback {
         snf.core.Core.stop()
         running = false
         alwaysOn = false
+        refreshTile()
         stopForeground(STOP_FOREGROUND_REMOVE)
+        // Same id, so starting again replaces it; swipe-away, unlike the running one.
+        getSystemService(NotificationManager::class.java).notify(1, notification(active = false))
         stopSelf()
     }
+
+    private fun refreshTile() = TileService.requestListeningState(this, ComponentName(this, FilterTile::class.java))
 
     override fun onRevoke() = engine.execute { shutdown() } // another VPN took over
     override fun onDestroy() { engine.execute { if (running) shutdown() }; super.onDestroy() }
@@ -141,15 +150,22 @@ class FilterVpnService : VpnService(), snf.core.Callback {
 
     override fun log(msg: String) { Log.i("snf-core", msg) }
 
-    private fun notification(): Notification {
+    private fun notification(active: Boolean): Notification {
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel("vpn", "VPN status", NotificationManager.IMPORTANCE_LOW))
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        val self = Intent(this, FilterVpnService::class.java)
+        val action = when {
+            active -> PendingIntent.getService(this, 1, self.setAction(STOP), PendingIntent.FLAG_IMMUTABLE)
+            VpnService.prepare(this) == null -> PendingIntent.getForegroundService(this, 2, self, PendingIntent.FLAG_IMMUTABLE)
+            else -> open // VPN consent was revoked (another VPN took over); the app asks again
+        }
         return Notification.Builder(this, "vpn")
             .setSmallIcon(R.drawable.ic_launcher_mono)
-            .setContentTitle("Network filter active")
+            .setContentTitle(if (active) "Network filter active" else "Network filter off")
             .setContentIntent(open)
-            .setOngoing(true)
+            .setOngoing(active)
+            .addAction(Notification.Action.Builder(Icon.createWithResource(this, R.drawable.ic_launcher_mono), if (active) "Stop" else "Start", action).build())
             .build()
     }
 }

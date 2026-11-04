@@ -28,7 +28,8 @@ core/                 Go engine, bound to Java with gomobile -> app/libs/core.aa
   bypass.go           known DoH/DoT hostnames and resolver IPs
   callback.go         Callback interface implemented in Kotlin (UidFor, Log)
 app/src/main/java/snf/app/
-  FilterVpnService.kt builds the tun, hands the fd to core, implements Callback
+  FilterVpnService.kt builds the tun, hands the fd to core, implements Callback; notification with Stop/Start
+  FilterTile.kt       Quick Settings toggle
   Settings.kt         SharedPreferences "snf" -> configJson(); presets; WireGuard profiles; list downloads
   MainActivity.kt     theme (Material You), Tab enum, nav scaffold
   HomeScreen.kt       power button, status notices, summary rows
