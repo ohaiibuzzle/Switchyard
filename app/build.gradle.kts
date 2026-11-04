@@ -10,8 +10,11 @@ android {
         applicationId = "dev.ohaiibuzzle.snf"
         minSdk = 29 // getConnectionOwnerUid
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1"
+        // CI passes the tag without its "v" (v0.1.3 -> 0.1.3); the code packs it so a later tag always upgrades.
+        val ver = System.getenv("SNF_VERSION") ?: "0.1.0"
+        val (major, minor, patch) = ver.split(".").map(String::toInt)
+        versionName = ver
+        versionCode = major * 1_000_000 + minor * 1_000 + patch
     }
     // Release signing comes from the environment (CI secrets, or your shell); without it the release APK is unsigned.
     signingConfigs {

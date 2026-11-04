@@ -3,7 +3,7 @@ name: Build
 on:
   push:
     branches: [main]
-    tags: ["v*"]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"] # v0.1.3
   pull_request:
 
 permissions:
@@ -66,7 +66,7 @@ jobs:
           SNF_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           SNF_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          export SNF_KEYSTORE="$RUNNER_TEMP/release.jks"
+          export SNF_VERSION="${GITHUB_REF_NAME#v}" SNF_KEYSTORE="$RUNNER_TEMP/release.jks"
           echo "$KEYSTORE_BASE64" | base64 -d > "$SNF_KEYSTORE"
           ./gradlew assembleRelease
           mv app/build/outputs/apk/release/app-release.apk "snf-$GITHUB_REF_NAME.apk"

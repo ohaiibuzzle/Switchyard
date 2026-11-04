@@ -48,7 +48,7 @@ build-core.sh         rebuilds app/libs/core.aar
 - **App:**
   - `./gradlew installDebug`.
   - The JDK comes from `org.gradle.java.home` in `gradle.properties`, which points at Android Studio's bundled JBR, because the system JDK is too new for AGP.
-- **CI:** `.github/workflows/build.yml` runs Go tests, builds the AAR, then makes a debug APK on pushes and PRs. A `v*` tag builds a signed release APK and attaches it to a GitHub release. Signing reads `SNF_KEYSTORE`, `SNF_KEYSTORE_PASSWORD`, `SNF_KEY_ALIAS` and `SNF_KEY_PASSWORD` from the environment, so it works the same locally. CI fills these from the secrets `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` and `KEY_PASSWORD`.
+- **CI:** `.github/workflows/build.yml` runs Go tests, builds the AAR, then makes a debug APK on pushes and PRs. Dependabot opens weekly update PRs for Go modules, Gradle and Actions. A `vX.Y.Z` tag (e.g. `v0.1.3`) sets `versionName` to `X.Y.Z` and `versionCode` to `X*1000000 + Y*1000 + Z`, then builds a signed release APK and attaches it to a GitHub release. Signing reads `SNF_KEYSTORE`, `SNF_KEYSTORE_PASSWORD`, `SNF_KEY_ALIAS` and `SNF_KEY_PASSWORD` from the environment, so it works the same locally. CI fills these from the secrets `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` and `KEY_PASSWORD`.
 - **Versions:** AGP 9.5 (built-in Kotlin, so no `kotlin-android` plugin), Kotlin 2.4, Compose BOM 2026.09, minSdk 29 (for `getConnectionOwnerUid`), compileSdk 37 (required by Compose), targetSdk 36.
 - **On-device testing (emulator `emulator-5554`, Play image, so no root and no tcpdump):**
   - `adb shell appops set dev.ohaiibuzzle.snf ACTIVATE_VPN allow` skips the VPN consent dialog. Reinstalling stops the VPN; tap the power button again.
