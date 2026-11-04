@@ -137,7 +137,7 @@ fun DnsScreen(s: Settings) {
             }
         }
         Group("Protection") {
-            SwitchRow(Icons.Rounded.GppGood, "Block apps' own DNS", checked = s.blockBypass) { v ->
+            SwitchRow(Icons.Rounded.GppGood, "Block apps' own DNS", "Encrypted only. Plain DNS always goes through us.", s.blockBypass) { v ->
                 s.blockBypass = v
             }
         }
