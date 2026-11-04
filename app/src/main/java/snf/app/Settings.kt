@@ -99,6 +99,7 @@ class Settings private constructor(ctx: Context) {
     var allowDomains by strs("allowDomains")
     var blockDomains by strs("blockDomains")
     var logOn by bool("logOn")
+    var skipLan by bool("skipLan", true)
     var tsControlUrl by str("tsControlUrl")
     var tsAuthKey by str("tsAuthKey")
     var tsDns by bool("tsDns")

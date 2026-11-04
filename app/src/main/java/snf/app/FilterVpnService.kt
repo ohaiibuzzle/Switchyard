@@ -74,16 +74,18 @@ class FilterVpnService : VpnService(), snf.core.Callback {
         val settings = Settings.of(this)
         try {
             if (settings.adblock) settings.refreshLists()
+            // shortcut: the local network is read once at start, like v6; restart the VPN after a network change.
+            val skip = if (settings.skipLan) localNets() else ""
             val b = Builder()
                 .setSession(getString(R.string.app_name))
                 .setMtu(MTU)
                 .addAddress("10.111.0.1", 32)
-                .addRoute("0.0.0.0", 0)
+                .routes("0.0.0.0/0", skip)
                 .addDnsServer("10.111.0.2") // any :53 is intercepted; this is just what apps are told
                 .addDisallowedApplication(packageName) // our own upstream sockets bypass the tunnel
             // Without v6 config Android blocks v6 for VPN apps, so they fall back to v4 instead of
-            // trying v6 we can't reach. shortcut: decided once at start, restart the VPN after a network change.
-            if (hasGlobalV6()) b.addAddress("fd00:111::1", 128).addRoute("::", 0).addDnsServer("fd00:111::2")
+            // trying v6 we can't reach.
+            if (hasGlobalV6()) b.addAddress("fd00:111::1", 128).routes("::/0", skip).addDnsServer("fd00:111::2")
             val pfd = b.establish() ?: error("VPN permission revoked")
             snf.core.Core.start(pfd.detachFd().toLong(), MTU.toLong(), settings.configJson(), this)
             lastError = null
@@ -98,6 +100,19 @@ class FilterVpnService : VpnService(), snf.core.Callback {
             starting = false
         }
     }
+
+    /** Everything in [root] except [skip]; computed in Go because Builder.excludeRoute needs Android 13. */
+    private fun Builder.routes(root: String, skip: String) = apply {
+        snf.core.Core.routesExcluding(root, skip).lines().filter { it.isNotEmpty() }.forEach {
+            addRoute(it.substringBefore('/'), it.substringAfter('/').toInt())
+        }
+    }
+
+    /** Local subnets plus link-local, multicast and broadcast, so casting and device discovery skip the filter. */
+    // shortcut: an app sending plain DNS straight to the router's LAN IP skips our DNS too; carve :53 hosts out if it matters.
+    private fun localNets() = (cm.getLinkProperties(cm.activeNetwork)?.linkAddresses.orEmpty()
+        .map { "${it.address.hostAddress!!.substringBefore('%')}/${it.prefixLength}" } +
+        listOf("169.254.0.0/16", "224.0.0.0/4", "255.255.255.255/32", "fe80::/10", "ff00::/8")).joinToString(" ")
 
     private fun hasGlobalV6() = cm.getLinkProperties(cm.activeNetwork)?.linkAddresses.orEmpty().any {
         val a = it.address

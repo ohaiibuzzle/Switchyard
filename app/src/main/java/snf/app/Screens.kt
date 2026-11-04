@@ -295,6 +295,11 @@ fun PrivacyScreen(s: Settings) {
             }
         }
         RouteGroup(s)
+        Group {
+            SwitchRow(Icons.Rounded.Router, "Skip local network", "Casting and sharing bypass the filter. Applies on restart.", s.skipLan) { v ->
+                s.skipLan = v
+            }
+        }
     }
 }
 
