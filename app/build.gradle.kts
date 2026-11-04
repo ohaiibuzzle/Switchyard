@@ -7,7 +7,7 @@ android {
     namespace = "snf.app"
     compileSdk = 37
     defaultConfig {
-        applicationId = "snf.app"
+        applicationId = "dev.ohaiibuzzle.snf"
         minSdk = 29 // getConnectionOwnerUid
         targetSdk = 36
         versionCode = 1

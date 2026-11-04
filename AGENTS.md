@@ -46,10 +46,10 @@ build-core.sh         rebuilds app/libs/core.aar
   - The JDK comes from `org.gradle.java.home` in `gradle.properties`, which points at Android Studio's bundled JBR, because the system JDK is too new for AGP.
 - **Versions:** AGP 9.5 (built-in Kotlin, so no `kotlin-android` plugin), Kotlin 2.4, Compose BOM 2026.09, minSdk 29 (for `getConnectionOwnerUid`), compileSdk 37 (required by Compose), targetSdk 36.
 - **On-device testing (emulator `emulator-5554`, Play image, so no root and no tcpdump):**
-  - `adb shell appops set snf.app ACTIVATE_VPN allow` skips the VPN consent dialog. Reinstalling stops the VPN; tap the power button again.
+  - `adb shell appops set dev.ohaiibuzzle.snf ACTIVATE_VPN allow` skips the VPN consent dialog. Reinstalling stops the VPN; tap the power button again.
   - `adb shell` runs as `com.android.shell` (uid 2000). Its traffic goes through the VPN, so `curl`, `nc -u -q3 -W3` and `ping` work as test clients.
   - `uiautomator dump` exposes merged Compose nodes. Empty text fields don't expose their label, so tap them by coordinates.
-  - Settings can be read with `adb exec-out run-as snf.app cat shared_prefs/snf.xml`. They can be written with `adb exec-in run-as snf.app sh -c 'cat > shared_prefs/snf.xml'` after `am force-stop`.
+  - Settings can be read with `adb exec-out run-as dev.ohaiibuzzle.snf cat shared_prefs/snf.xml`. They can be written with `adb exec-in run-as dev.ohaiibuzzle.snf sh -c 'cat > shared_prefs/snf.xml'` after `am force-stop`.
   - The emulator's NAT re-joins TCP streams, so TCP segment splits can't be seen from the host. TLS record changes can.
 
 ## How it fits together
