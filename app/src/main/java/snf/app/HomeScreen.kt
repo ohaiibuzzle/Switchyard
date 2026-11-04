@@ -54,7 +54,7 @@ fun HomeScreen(s: Settings, open: (Page) -> Unit, goTo: (Tab) -> Unit) {
         }
         if (err != null) Notice(Icons.Rounded.ErrorOutline, "Couldn't start the filter", err)
         if (!batteryExempt) Notice(
-            Icons.Rounded.BatteryAlert, "Let it run in the background",
+            Icons.Rounded.BatteryAlert, "Let Switchyard run in the background",
             "Battery optimization can stop the filter. Tap to allow.",
         ) {
             askExempt.launch(Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${act.packageName}")))
