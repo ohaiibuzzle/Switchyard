@@ -116,7 +116,6 @@ fun DnsScreen(s: Settings, change: (() -> Unit) -> Unit) {
     var url by remember { mutableStateOf(saved) }
     var boot by remember { mutableStateOf(s.dnsBootstrap()) }
     ScreenColumn {
-        Hint("Every app's DNS lookups are encrypted and sent to the provider you pick here.")
         Group("Provider") {
             DNS_PRESETS.forEach { p ->
                 ListItem(
@@ -132,7 +131,6 @@ fun DnsScreen(s: Settings, change: (() -> Unit) -> Unit) {
             }
             ListItem(
                 headlineContent = { Text("Custom") },
-                supportingContent = { Text("Your own DoH, DoT or DoQ server") },
                 trailingContent = { RadioButton(custom, null) },
                 colors = rowColors,
                 modifier = Modifier.selectable(custom, role = Role.RadioButton) { custom = true },
@@ -146,11 +144,9 @@ fun DnsScreen(s: Settings, change: (() -> Unit) -> Unit) {
             }
         }
         Group("Protection") {
-            SwitchRow(
-                Icons.Rounded.GppGood, "Stop apps from bypassing",
-                "Block apps that try to use their own encrypted DNS",
-                s.bool("blockBypass", true),
-            ) { v -> change { s.put("blockBypass", v) } }
+            SwitchRow(Icons.Rounded.GppGood, "Block apps' own DNS", checked = s.bool("blockBypass", true)) { v ->
+                change { s.put("blockBypass", v) }
+            }
         }
     }
 }
@@ -200,11 +196,10 @@ fun AppsScreen(s: Settings, change: (() -> Unit) -> Unit, rev: Int) {
         Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(showSystem, { showSystem = !showSystem }, label = { Text("System apps") })
         }
-        Hint(
-            if (!proxyOn) "Turn an app off to cut its internet access."
-            else "Turn an app off to cut its internet. The globe sends it through ${if (mode == "wg") "WireGuard" else "your proxy"}; pick none to send every app."
-        )
-        Spacer(Modifier.height(8.dp))
+        if (proxyOn) {
+            Hint("Globe: route through ${if (mode == "wg") "WireGuard" else "proxy"}. None picked = all apps.")
+            Spacer(Modifier.height(8.dp))
+        }
         val list = apps
         if (list == null) Box(Modifier.fillMaxWidth().padding(32.dp), Alignment.Center) { CircularProgressIndicator() }
         else LazyColumn(Modifier.clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))) {
@@ -245,7 +240,7 @@ fun AdBlockScreen(s: Settings, change: (() -> Unit) -> Unit) {
     }
     ScreenColumn {
         Group {
-            SwitchRow(Icons.Rounded.Block, "Block ads and trackers", "Filtered on this device, nothing leaves it", s.bool("adblock")) { v ->
+            SwitchRow(Icons.Rounded.Block, "Block ads and trackers", checked = s.bool("adblock")) { v ->
                 change { s.put("adblock", v) }
             }
         }
@@ -285,25 +280,23 @@ fun AdBlockScreen(s: Settings, change: (() -> Unit) -> Unit) {
             }
         }
         refreshStatus?.let { Hint(it) }
-        Hint("Lists also update when the filter starts, if they're more than a day old.")
     }
 }
 
 @Composable
 fun PrivacyScreen(s: Settings, change: (() -> Unit) -> Unit) {
     ScreenColumn {
-        Hint("Helps you reach sites blocked by network filters that look at which sites you visit.")
         Group("Disguise traffic") {
-            SwitchRow(Icons.Rounded.Lock, "Hide site names in secure connections", "Splits the site name across packets", s.bool("sniSplit")) { v ->
+            SwitchRow(Icons.Rounded.Lock, "Hide site names in secure connections", checked = s.bool("sniSplit")) { v ->
                 change { s.put("sniSplit", v) }
             }
-            SwitchRow(Icons.Rounded.CallSplit, "Fragment secure handshakes", "Breaks the opening message into pieces", s.bool("tlsFrag")) { v ->
+            SwitchRow(Icons.Rounded.CallSplit, "Fragment secure handshakes", checked = s.bool("tlsFrag")) { v ->
                 change { s.put("tlsFrag", v) }
             }
-            SwitchRow(Icons.Rounded.Http, "Disguise unencrypted requests", "For older http:// sites", s.bool("hostTricks")) { v ->
+            SwitchRow(Icons.Rounded.Http, "Disguise unencrypted requests", checked = s.bool("hostTricks")) { v ->
                 change { s.put("hostTricks", v) }
             }
-            SwitchRow(Icons.Rounded.Speed, "Turn off QUIC", "Makes apps use connections the options above can disguise", s.bool("blockQuic")) { v ->
+            SwitchRow(Icons.Rounded.Speed, "Turn off QUIC", "Lets the options above cover more apps", s.bool("blockQuic")) { v ->
                 change { s.put("blockQuic", v) }
             }
         }
@@ -317,12 +310,12 @@ fun RouteGroup(s: Settings, change: (() -> Unit) -> Unit) {
     var proxy by remember { mutableStateOf(s.str("proxyUrl")) }
     Group("Route traffic") {
         listOf(
-            Triple("off", "Directly", "No tunnel"),
-            Triple("proxy", "Through a proxy", "SOCKS5 or HTTP · TCP only"),
-            Triple("wg", "Through WireGuard", "Your own VPN server or provider · TCP and UDP"),
+            Triple("off", "Directly", null),
+            Triple("proxy", "Through a proxy", "TCP only"),
+            Triple("wg", "Through WireGuard", null),
         ).forEach { (key, title, sub) ->
             ListItem(
-                headlineContent = { Text(title) }, supportingContent = { Text(sub) },
+                headlineContent = { Text(title) }, supportingContent = sub?.let { { Text(it) } },
                 trailingContent = { RadioButton(mode == key, null) },
                 colors = rowColors,
                 modifier = Modifier.selectable(mode == key, role = Role.RadioButton) { change { s.put("routeMode", key) } },
@@ -335,8 +328,7 @@ fun RouteGroup(s: Settings, change: (() -> Unit) -> Unit) {
         }
         if (mode == "wg") WgProfiles(s, change)
     }
-    if (mode == "wg") Hint("Only addresses in the peer's AllowedIPs use the tunnel. DNS still goes to your Private DNS provider.")
-    if (mode == "proxy") Hint("The proxy only carries TCP. Other traffic still goes directly.")
+    if (mode == "wg") Hint("DNS doesn't go through the tunnel.")
 }
 
 @Composable
@@ -348,7 +340,7 @@ fun WgStatus() {
     }
     val (text, ok) = when {
         err != null -> "Couldn't apply: $err" to false
-        age == -2L -> "Not connected · start the filter and save a config" to false
+        age == -2L -> "Not connected" to false
         age == -1L -> "Waiting for the server to answer…" to false
         // WireGuard re-handshakes every 2 min only while traffic flows, so silence after that is just idle.
         age <= 180 -> "Connected · last handshake ${age}s ago" to true
@@ -405,7 +397,7 @@ fun WgProfiles(s: Settings, change: (() -> Unit) -> Unit) {
         AlertDialog(
             onDismissRequest = { deleting = null },
             title = { Text("Delete \"$name\"?") },
-            text = { Text("Its keys are removed from this device. Keep a copy if you'll need it again.") },
+            text = { Text("This can't be undone.") },
             confirmButton = { TextButton({ change { s.deleteWg(name) }; deleting = null }) { Text("Delete") } },
             dismissButton = { TextButton({ deleting = null }) { Text("Cancel") } },
         )

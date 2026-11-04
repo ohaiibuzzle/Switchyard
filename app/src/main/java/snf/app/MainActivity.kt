@@ -22,7 +22,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
@@ -131,10 +130,6 @@ fun HomeScreen(s: Settings, goTo: (Int) -> Unit) {
             }
             Spacer(Modifier.height(20.dp))
             Text(if (running) "Protected" else "Not protected", style = MaterialTheme.typography.headlineSmall)
-            Text(
-                if (running) "All app traffic goes through the filter" else "Tap to start filtering",
-                style = MaterialTheme.typography.bodyMedium, color = c.onSurfaceVariant, textAlign = TextAlign.Center,
-            )
         }
         if (err != null) Notice(Icons.Rounded.ErrorOutline, "Couldn't start the filter", err!!)
         if (strictPrivateDns) Notice(
