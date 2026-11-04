@@ -56,7 +56,7 @@ jobs:
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         with:
           name: app-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/*.apk
 
       - name: Build signed release APK
         if: startsWith(github.ref, 'refs/tags/')
@@ -69,10 +69,12 @@ jobs:
           export SNF_VERSION="${GITHUB_REF_NAME#v}" SNF_KEYSTORE="$RUNNER_TEMP/release.jks"
           echo "$KEYSTORE_BASE64" | base64 -d > "$SNF_KEYSTORE"
           ./gradlew assembleRelease
-          mv app/build/outputs/apk/release/app-release.apk "snf-$GITHUB_REF_NAME.apk"
+          for abi in universal arm64-v8a x86_64; do
+            mv "app/build/outputs/apk/release/app-$abi-release.apk" "snf-$GITHUB_REF_NAME-$abi.apk"
+          done
 
       - uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: snf-${{ github.ref_name }}.apk
+          files: snf-${{ github.ref_name }}-*.apk
           generate_release_notes: true

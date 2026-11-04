@@ -27,7 +27,31 @@ android {
             }
         }
     }
-    buildTypes { release { signingConfig = signingConfigs.findByName("release") } }
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.findByName("release")
+            // The Go bindings' keep rules ship inside core.aar (go.**, snf.**).
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+        }
+    }
+    // One APK per ABI core.aar is built for (phones; x86 Chromebooks and the emulator), plus a universal one.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "x86_64")
+            isUniversalApk = true
+        }
+    }
+    // Compose's tiny 32-bit libs would let a 32-bit device install the universal APK, then crash without the engine.
+    packaging {
+        jniLibs {
+            excludes += listOf("lib/x86/**", "lib/armeabi-v7a/**")
+            useLegacyPackaging = true // compressed: the Go engine is 21 MB raw, ~8 MB zipped; unpacked once at install
+        }
+    }
     buildFeatures { compose = true }
 }
 
