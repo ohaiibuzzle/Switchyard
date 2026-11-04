@@ -31,6 +31,7 @@ type config struct {
 	BlockDomains []string `json:"blockDomains"`
 	Log          bool     `json:"log"`
 	TSDir        string   `json:"tsDir"`        // Tailscale state dir; empty = off. The app never sends it with WGConf or ProxyURL.
+	TSHostname   string   `json:"tsHostname"`   // the device's name, as Tailscale's own app uses
 	TSControlURL string   `json:"tsControlUrl"` // empty = Tailscale's own servers
 	TSAuthKey    string   `json:"tsAuthKey"`
 	TSDNS        bool     `json:"tsDns"` // ask the tailnet first, DNSUpstream for what it can't answer
@@ -164,7 +165,7 @@ func newState(js string) (*state, error) {
 		up.Close()
 		return nil, err
 	}
-	ts, err := tsFor(c.TSDir, c.TSControlURL, c.TSAuthKey)
+	ts, err := tsFor(c.TSDir, c.TSHostname, c.TSControlURL, c.TSAuthKey)
 	if err != nil {
 		up.Close()
 		return nil, fmt.Errorf("tailscale: %w", err)

@@ -46,8 +46,8 @@ func inTailnet(a netip.Addr) bool { return tailnet4.Contains(a) || tailnet6.Cont
 
 // tsFor returns a running node for these settings, reusing the current one when they're
 // unchanged. An empty dir stops it.
-func tsFor(dir, controlURL, authKey string) (*tsNode, error) {
-	key := dir + "\n" + controlURL + "\n" + authKey
+func tsFor(dir, hostname, controlURL, authKey string) (*tsNode, error) {
+	key := dir + "\n" + hostname + "\n" + controlURL + "\n" + authKey
 	tsMu.Lock()
 	defer tsMu.Unlock()
 	if t := tsCur.Load(); t != nil && t.key == key {
@@ -67,7 +67,7 @@ func tsFor(dir, controlURL, authKey string) (*tsNode, error) {
 	}
 	os.Setenv("TS_LOGS_DIR", dir)
 	srv := &tsnet.Server{
-		Dir: dir, Hostname: "android-snf", ControlURL: controlURL, AuthKey: authKey,
+		Dir: dir, Hostname: hostname, ControlURL: controlURL, AuthKey: authKey,
 		// Silent: the user-facing log repeats the login URL every 5s, and TsStatus already shows it.
 		Logf: func(string, ...any) {}, UserLogf: func(string, ...any) {},
 	}

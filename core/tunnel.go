@@ -125,7 +125,7 @@ func Stop() {
 // closeTunnels stops the WireGuard and Tailscale nodes, which outlive any one state snapshot.
 func closeTunnels() {
 	wgFor("")
-	tsFor("", "", "")
+	tsFor("", "", "", "")
 }
 
 func addrPort(a tcpip.Address, p uint16) netip.AddrPort {

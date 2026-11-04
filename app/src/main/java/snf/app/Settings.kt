@@ -173,6 +173,8 @@ class Settings private constructor(ctx: Context) {
         put("log", logOn)
         val ts = routeMode == "ts"
         put("tsDir", if (ts) File(app.filesDir, "tailscale").path else "")
+        // Like Tailscale's app: the name set in Android's About phone, else the model; control turns it into a DNS label.
+        put("tsHostname", android.provider.Settings.Global.getString(app.contentResolver, android.provider.Settings.Global.DEVICE_NAME) ?: android.os.Build.MODEL)
         put("tsControlUrl", tsControlUrl)
         put("tsAuthKey", tsAuthKey)
         put("tsDns", ts && tsDns)
