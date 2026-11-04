@@ -120,7 +120,7 @@ func addrPort(a tcpip.Address, p uint16) netip.AddrPort {
 }
 
 // verdict returns the owning uid and, if the flow must be dropped, why (else "").
-func verdict(s *state, proto int, name string, src, dst netip.AddrPort) (int, string) {
+func verdict(s *state, proto int, src, dst netip.AddrPort) (int, string) {
 	uid := -1
 	if c := cb; c != nil {
 		uid = c.UidFor(proto, src.Addr().String(), int(src.Port()), dst.Addr().String(), int(dst.Port()))
@@ -137,6 +137,10 @@ func verdict(s *state, proto int, name string, src, dst netip.AddrPort) (int, st
 		why = "quic"
 	}
 	if why != "" {
+		name := "tcp"
+		if proto == unix.IPPROTO_UDP {
+			name = "udp"
+		}
 		logFlow(uid, name, dst, "block", why, nil)
 	}
 	return uid, why
@@ -150,7 +154,7 @@ func onTCP(r *tcp.ForwarderRequest) {
 		r.Complete(true)
 		return
 	}
-	uid, why := verdict(s, unix.IPPROTO_TCP, "tcp", src, dst)
+	uid, why := verdict(s, unix.IPPROTO_TCP, src, dst)
 	if why != "" {
 		r.Complete(true)
 		return
@@ -195,7 +199,7 @@ func onUDP(r *udp.ForwarderRequest) bool {
 	if s == nil {
 		return true
 	}
-	uid, why := verdict(s, unix.IPPROTO_UDP, "udp", src, dst)
+	uid, why := verdict(s, unix.IPPROTO_UDP, src, dst)
 	if why != "" {
 		return true // handled = silently dropped
 	}

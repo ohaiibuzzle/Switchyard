@@ -19,7 +19,7 @@ type event struct {
 	Dst    string `json:"dst,omitempty"`
 	Host   string `json:"host,omitempty"`
 	Action string `json:"action"`           // allow, block, fail
-	Reason string `json:"reason,omitempty"` // code: route on allow/fail, rule on block
+	Reason string `json:"reason,omitempty"` // code: route on allow/fail, rule on block; ActivityScreen.kt reasonText maps these
 	Err    string `json:"err,omitempty"`    // why a fail failed
 }
 

@@ -204,14 +204,14 @@ fun AppsScreen(s: Settings, change: (() -> Unit) -> Unit) {
                     leadingContent = { AppIcon(a.pkg) },
                     trailingContent = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (proxyOn) IconToggleButton(uid in proxied, { change { s.routedUids = proxied.toggle(uid) } }) {
+                            if (proxyOn) IconToggleButton(uid in proxied, { change { s.routedUids = s.routedUids.toggle(uid) } }) {
                                 Icon(Icons.Rounded.Public, "Route through tunnel")
                             }
                             Switch(allowed, null)
                         }
                     },
                     colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    modifier = Modifier.toggleable(allowed, role = Role.Switch) { change { s.blockedUids = blocked.toggle(uid) } },
+                    modifier = Modifier.toggleable(allowed, role = Role.Switch) { change { s.blockedUids = s.blockedUids.toggle(uid) } },
                 )
             }
         }
@@ -237,20 +237,20 @@ fun AdBlockScreen(s: Settings, change: (() -> Unit) -> Unit) {
         Group("Block lists") {
             LIST_PRESETS.forEach { p ->
                 SwitchRow(null, p.name, if (p.url in lists) "${p.desc}\n${updated(p.url)}" else p.desc, p.url in lists) {
-                    change { s.lists = lists.toggle(p.url) }
+                    change { s.lists = s.lists.toggle(p.url) }
                 }
             }
             (lists - presetUrls).forEach { url ->
                 ListItem(
                     headlineContent = { Text(url.substringAfter("://").substringBefore('/')) },
                     supportingContent = { Text(updated(url)) },
-                    trailingContent = { IconButton({ change { s.lists = lists - url } }) { Icon(Icons.Rounded.Delete, "Remove") } },
+                    trailingContent = { IconButton({ change { s.lists = s.lists - url } }) { Icon(Icons.Rounded.Delete, "Remove") } },
                     colors = rowColors,
                 )
             }
             Row(Modifier.padding(start = 16.dp, end = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(newUrl, { newUrl = it }, Modifier.weight(1f), placeholder = { Text("Add list by URL") }, singleLine = true)
-                IconButton({ newUrl.trim().takeIf { it.startsWith("http") }?.let { u -> change { s.lists = lists + u }; newUrl = "" } }) {
+                IconButton({ newUrl.trim().takeIf { it.startsWith("http") }?.let { u -> change { s.lists = s.lists + u }; newUrl = "" } }) {
                     Icon(Icons.Rounded.Add, "Add list")
                 }
             }

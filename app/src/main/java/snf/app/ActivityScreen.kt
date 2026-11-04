@@ -57,6 +57,7 @@ private fun appFor(ctx: Context, uid: Int): AppId = appIds.getOrPut(uid) {
     }
 }
 
+// Codes come from core: verdict (tunnel.go), dnsDecision and upstreamDial (routing.go).
 private fun reasonText(e: Ev) = when (e.action) {
     "block" -> when (e.reason) {
         "app" -> "App blocked"
@@ -174,7 +175,7 @@ fun ActivityScreen(s: Settings, change: (() -> Unit) -> Unit) {
             }
             if (app.pkg != null) {
                 SheetAction(Icons.Rounded.Apps, if (e.uid in blockedApps) "Unblock ${app.label}" else "Block ${app.label}") {
-                    change { s.blockedUids = blockedApps.toggle(e.uid) }; close()
+                    change { s.blockedUids = s.blockedUids.toggle(e.uid) }; close()
                 }
             }
             SheetAction(Icons.Rounded.FilterList, "Show only ${app.label}") { appFilter = e.uid; close() }

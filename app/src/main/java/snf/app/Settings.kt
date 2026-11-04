@@ -51,7 +51,13 @@ fun <T> Set<T>.toggle(x: T) = if (x in this) this - x else this + x
  * All settings live in one SharedPreferences file; [configJson] turns them into the core's config.
  * Reads go through [read], so composables that read a setting recompose when any setting changes.
  */
-class Settings(ctx: Context) {
+class Settings private constructor(ctx: Context) {
+    companion object {
+        @Volatile private var instance: Settings? = null
+        /** One per process, so the UI and the service share one prefs listener. */
+        fun of(ctx: Context) = instance ?: synchronized(this) { instance ?: Settings(ctx).also { instance = it } }
+    }
+
     private val app = ctx.applicationContext
     private val prefs = app.getSharedPreferences("snf", Context.MODE_PRIVATE)
     private var version by mutableIntStateOf(0)

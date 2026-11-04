@@ -40,7 +40,7 @@ class FilterVpnService : VpnService(), snf.core.Callback {
             val app = ctx.applicationContext
             engine.execute {
                 if (!running) return@execute // a start still queued reads the latest settings itself
-                try { snf.core.Core.reconfigure(Settings(app).configJson()); lastError = null }
+                try { snf.core.Core.reconfigure(Settings.of(app).configJson()); lastError = null }
                 catch (e: Exception) { lastError = e.message; Log.e("snf", "reconfigure", e) }
             }
         }
@@ -50,6 +50,7 @@ class FilterVpnService : VpnService(), snf.core.Callback {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == STOP) {
+            // shortcut: queues behind a running launch(), which may spend a while downloading lists; interrupt it if that bites.
             engine.execute { shutdown() }
             return START_NOT_STICKY
         }
@@ -63,7 +64,7 @@ class FilterVpnService : VpnService(), snf.core.Callback {
     }
 
     private fun launch() {
-        val settings = Settings(this)
+        val settings = Settings.of(this)
         try {
             if (settings.adblock) settings.refreshLists()
             val b = Builder()
