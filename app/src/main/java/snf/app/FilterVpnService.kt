@@ -16,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 class FilterVpnService : VpnService(), snf.core.Callback {
     companion object {
@@ -36,11 +37,15 @@ class FilterVpnService : VpnService(), snf.core.Callback {
         fun start(ctx: Context) = ctx.startForegroundService(Intent(ctx, FilterVpnService::class.java))
         fun stop(ctx: Context) = ctx.startService(Intent(ctx, FilterVpnService::class.java).setAction(STOP))
 
-        /** Pushes changed settings into a running (or starting) engine. */
+        private val reconfigurePending = AtomicBoolean(false)
+
+        /** Pushes changed settings into a running (or starting) engine. A burst of writes becomes one reconfigure. */
         fun reconfigure(ctx: Context) {
             if (!running && !starting) return
+            if (!reconfigurePending.compareAndSet(false, true)) return // the queued one will read the latest settings
             val app = ctx.applicationContext
             engine.execute {
+                reconfigurePending.set(false) // cleared before reading, so a write from here on queues another
                 if (!running) return@execute // a start still queued reads the latest settings itself
                 try { snf.core.Core.reconfigure(Settings.of(app).configJson()); lastError = null }
                 catch (e: Exception) { lastError = e.message; Log.e("snf", "reconfigure", e) }

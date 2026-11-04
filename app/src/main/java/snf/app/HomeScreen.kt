@@ -61,7 +61,7 @@ fun HomeScreen(s: Settings, onActivity: () -> Unit, goTo: (Tab) -> Unit) {
         }
         if (strictPrivateDns) Notice(
             Icons.Rounded.Warning, "Turn off Android's Private DNS",
-            "It's set to a specific provider, which conflicts with this app. Set it to Off or Automatic in system settings.",
+            "System Private DNS conflicts with this app and may cause loss of Internet access. Set it to Off or Automatic in system settings.",
         )
         val preset = DNS_PRESETS.firstOrNull { it.url == s.dnsUrl }
         val privacy = listOfNotNull(

@@ -83,7 +83,7 @@ private fun reasonText(e: Ev) = when (e.action) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ActivityScreen(s: Settings, change: (() -> Unit) -> Unit) {
+fun ActivityScreen(s: Settings) {
     val ctx = LocalContext.current
     val logOn = s.logOn
     val allow = s.allowDomains.sorted()
@@ -102,7 +102,7 @@ fun ActivityScreen(s: Settings, change: (() -> Unit) -> Unit) {
         item {
             Group {
                 SwitchRow(Icons.Rounded.History, "Record activity", "Kept in memory until the filter stops", logOn) { v ->
-                    change { s.logOn = v }
+                    s.logOn = v
                 }
             }
         }
@@ -114,7 +114,7 @@ fun ActivityScreen(s: Settings, change: (() -> Unit) -> Unit) {
                         supportingContent = { Text(if (isAllow) "Always allowed" else "Always blocked") },
                         leadingContent = { Icon(if (isAllow) Icons.Rounded.CheckCircle else Icons.Rounded.Block, null) },
                         trailingContent = {
-                            IconButton({ change { s.removeRule(d) } }) {
+                            IconButton({ s.removeRule(d) }) {
                                 Icon(Icons.Rounded.Delete, "Remove rule for $d")
                             }
                         },
@@ -124,8 +124,8 @@ fun ActivityScreen(s: Settings, change: (() -> Unit) -> Unit) {
                 Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(newRule, { newRule = it }, Modifier.weight(1f), placeholder = { Text("example.com") }, singleLine = true)
                     val d = newRule.trim().lowercase().trimEnd('.')
-                    TextButton({ change { s.addRule(true, d) }; newRule = "" }, enabled = '.' in d) { Text("Allow") }
-                    TextButton({ change { s.addRule(false, d) }; newRule = "" }, enabled = '.' in d) { Text("Block") }
+                    TextButton({ s.addRule(true, d); newRule = "" }, enabled = '.' in d) { Text("Allow") }
+                    TextButton({ s.addRule(false, d); newRule = "" }, enabled = '.' in d) { Text("Block") }
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -178,12 +178,12 @@ fun ActivityScreen(s: Settings, change: (() -> Unit) -> Unit) {
             HorizontalDivider()
             val h = e.host
             if (h != null) {
-                SheetAction(Icons.Rounded.CheckCircle, "Always allow $h") { change { s.addRule(true, h) }; close() }
-                SheetAction(Icons.Rounded.Block, "Always block $h") { change { s.addRule(false, h) }; close() }
+                SheetAction(Icons.Rounded.CheckCircle, "Always allow $h") { s.addRule(true, h); close() }
+                SheetAction(Icons.Rounded.Block, "Always block $h") { s.addRule(false, h); close() }
             }
             if (app.pkg != null) {
                 SheetAction(Icons.Rounded.Apps, if (e.uid in blockedApps) "Unblock ${app.label}" else "Block ${app.label}") {
-                    change { s.blockedUids = s.blockedUids.toggle(e.uid) }; close()
+                    s.blockedUids = s.blockedUids.toggle(e.uid); close()
                 }
             }
             SheetAction(Icons.Rounded.FilterList, "Show only ${app.label}") { appFilter = e.uid; close() }

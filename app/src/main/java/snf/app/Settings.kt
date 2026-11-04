@@ -62,7 +62,8 @@ class Settings private constructor(ctx: Context) {
     private val prefs = app.getSharedPreferences("snf", Context.MODE_PRIVATE)
     private var version by mutableIntStateOf(0)
     // Held strongly: SharedPreferences only keeps a weak reference to its listeners.
-    private val onChange = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> version++ }
+    // Every write recomposes readers and pushes the new config into a running engine.
+    private val onChange = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> version++; FilterVpnService.reconfigure(app) }
     init { prefs.registerOnSharedPreferenceChangeListener(onChange) }
 
     private fun <T> read(f: SharedPreferences.() -> T): T { version; return prefs.f() }

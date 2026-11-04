@@ -42,7 +42,7 @@ fun WgStatus() {
 }
 
 @Composable
-fun WgProfiles(s: Settings, change: (() -> Unit) -> Unit) {
+fun WgProfiles(s: Settings) {
     val profiles = s.wgProfiles()
     val active = s.activeWg()?.name
     // Profile being edited; name "" with editOld null means a new one. With no profiles, always a new one.
@@ -63,7 +63,7 @@ fun WgProfiles(s: Settings, change: (() -> Unit) -> Unit) {
                 }
             },
             colors = rowColors,
-            modifier = Modifier.selectable(p.name == active, role = Role.RadioButton) { change { s.wgActive = p.name } },
+            modifier = Modifier.selectable(p.name == active, role = Role.RadioButton) { s.wgActive = p.name },
         )
     }
     val e = editing ?: WgProfile("", "").takeIf { profiles.isEmpty() }
@@ -73,7 +73,7 @@ fun WgProfiles(s: Settings, change: (() -> Unit) -> Unit) {
         Text("Add config")
     } else WgEditor(e, editOld, profiles.map { it.name }.toSet(), onCancel = if (profiles.isEmpty()) null else ({ editing = null })) { saved ->
         // New profiles become active; renaming the active one keeps it active.
-        change { s.saveWg(editOld, saved, activate = editOld == null || editOld == active) }
+        s.saveWg(editOld, saved, activate = editOld == null || editOld == active)
         editing = null
     }
 
@@ -82,7 +82,7 @@ fun WgProfiles(s: Settings, change: (() -> Unit) -> Unit) {
             onDismissRequest = { deleting = null },
             title = { Text("Delete \"$name\"?") },
             text = { Text("This can't be undone.") },
-            confirmButton = { TextButton({ change { s.deleteWg(name) }; deleting = null }) { Text("Delete") } },
+            confirmButton = { TextButton({ s.deleteWg(name); deleting = null }) { Text("Delete") } },
             dismissButton = { TextButton({ deleting = null }) { Text("Cancel") } },
         )
     }

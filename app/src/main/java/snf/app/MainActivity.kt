@@ -66,10 +66,8 @@ enum class Tab(val title: String, val label: String, val icon: ImageVector) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun App(s: Settings) {
-    val ctx = LocalContext.current
     var tab by remember { mutableStateOf(Tab.Home) }
     var activity by remember { mutableStateOf(false) } // Activity log screen, opened from Home
-    val change: (() -> Unit) -> Unit = { it(); FilterVpnService.reconfigure(ctx) }
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     val tabState = rememberSaveableStateHolder() // keeps each tab's scroll position across tab switches
     Scaffold(
@@ -93,14 +91,14 @@ fun App(s: Settings) {
     ) { pad ->
         Box(Modifier.padding(pad).fillMaxSize()) {
             BackHandler(activity) { activity = false }
-            if (activity) ActivityScreen(s, change)
+            if (activity) ActivityScreen(s)
             else tabState.SaveableStateProvider(tab) {
                 when (tab) {
                     Tab.Home -> HomeScreen(s, onActivity = { activity = true }) { tab = it }
-                    Tab.Dns -> DnsScreen(s, change)
-                    Tab.Apps -> AppsScreen(s, change)
-                    Tab.Ads -> AdBlockScreen(s, change)
-                    Tab.Privacy -> PrivacyScreen(s, change)
+                    Tab.Dns -> DnsScreen(s)
+                    Tab.Apps -> AppsScreen(s)
+                    Tab.Ads -> AdBlockScreen(s)
+                    Tab.Privacy -> PrivacyScreen(s)
                 }
             }
         }

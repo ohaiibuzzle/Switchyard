@@ -69,7 +69,7 @@ build-core.sh         rebuilds app/libs/core.aar
 - **UI state:**
   - `Settings` exposes typed properties (`s.adblock`, `s.blockedUids`, …). Every read touches a Compose state counter that a prefs listener bumps, so composables recompose on any settings change. No manual re-keying.
   - Multi-key writes (`setDns`, `addRule`, `removeRule`, `saveWg`) are one `edit()`.
-  - Every settings write from the UI goes through `change { … }`, which calls `FilterVpnService.reconfigure`.
+  - Screens just write `Settings`. Its prefs listener calls `FilterVpnService.reconfigure`, which merges a burst of writes into one reconfigure. Changes outside prefs (a list download) call it directly.
   - Engine start, reconfigure and stop all run on one single-thread executor in `FilterVpnService`, so they apply in order. `starting`, `running` and `lastError` are Compose state; the UI reads them directly.
   - Tabs are the `Tab` enum. `rememberSaveableStateHolder` keeps each tab's scroll position.
 

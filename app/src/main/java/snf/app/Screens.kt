@@ -102,7 +102,7 @@ fun Hint(text: String) = Text(
 // ---- Screens ----
 
 @Composable
-fun DnsScreen(s: Settings, change: (() -> Unit) -> Unit) {
+fun DnsScreen(s: Settings) {
     val saved = s.dnsUrl
     // Keyed on the saved server so picking a preset or saving refreshes the form.
     var custom by remember(saved) { mutableStateOf(DNS_PRESETS.none { it.url == saved }) }
@@ -118,7 +118,7 @@ fun DnsScreen(s: Settings, change: (() -> Unit) -> Unit) {
                     colors = rowColors,
                     modifier = Modifier.selectable(!custom && saved == p.url, role = Role.RadioButton) {
                         custom = false
-                        change { s.setDns(p.url, p.bootstrap) }
+                        s.setDns(p.url, p.bootstrap)
                     },
                 )
             }
@@ -133,12 +133,12 @@ fun DnsScreen(s: Settings, change: (() -> Unit) -> Unit) {
                     placeholder = { Text("https://, tls:// or quic://") }, singleLine = true)
                 OutlinedTextField(boot, { boot = it }, Modifier.fillMaxWidth(), label = { Text("Server IPs (optional)") },
                     placeholder = { Text("1.2.3.4, 5.6.7.8") }, singleLine = true)
-                FilledTonalButton({ change { s.setDns(url.trim(), boot.trim()) } }) { Text("Save") }
+                FilledTonalButton({ s.setDns(url.trim(), boot.trim()) }) { Text("Save") }
             }
         }
         Group("Protection") {
             SwitchRow(Icons.Rounded.GppGood, "Block apps' own DNS", checked = s.blockBypass) { v ->
-                change { s.blockBypass = v }
+                s.blockBypass = v
             }
         }
     }
@@ -162,7 +162,7 @@ fun AppIcon(pkg: String) {
 }
 
 @Composable
-fun AppsScreen(s: Settings, change: (() -> Unit) -> Unit) {
+fun AppsScreen(s: Settings) {
     val ctx = LocalContext.current
     var apps by remember { mutableStateOf<List<AppEntry>?>(null) }
     var query by remember { mutableStateOf("") }
@@ -205,14 +205,14 @@ fun AppsScreen(s: Settings, change: (() -> Unit) -> Unit) {
                     leadingContent = { AppIcon(a.pkg) },
                     trailingContent = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (proxyOn) IconToggleButton(uid in proxied, { change { s.routedUids = s.routedUids.toggle(uid) } }) {
+                            if (proxyOn) IconToggleButton(uid in proxied, { s.routedUids = s.routedUids.toggle(uid) }) {
                                 Icon(Icons.Rounded.Public, "Route through tunnel")
                             }
                             Switch(allowed, null)
                         }
                     },
                     colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    modifier = Modifier.toggleable(allowed, role = Role.Switch) { change { s.blockedUids = s.blockedUids.toggle(uid) } },
+                    modifier = Modifier.toggleable(allowed, role = Role.Switch) { s.blockedUids = s.blockedUids.toggle(uid) },
                 )
             }
         }
@@ -220,7 +220,8 @@ fun AppsScreen(s: Settings, change: (() -> Unit) -> Unit) {
 }
 
 @Composable
-fun AdBlockScreen(s: Settings, change: (() -> Unit) -> Unit) {
+fun AdBlockScreen(s: Settings) {
+    val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var newUrl by remember { mutableStateOf("") }
     var refreshStatus by remember { mutableStateOf<String?>(null) }
@@ -232,26 +233,26 @@ fun AdBlockScreen(s: Settings, change: (() -> Unit) -> Unit) {
     ScreenColumn {
         Group {
             SwitchRow(Icons.Rounded.Block, "Block ads and trackers", checked = s.adblock) { v ->
-                change { s.adblock = v }
+                s.adblock = v
             }
         }
         Group("Block lists") {
             LIST_PRESETS.forEach { p ->
                 SwitchRow(null, p.name, if (p.url in lists) "${p.desc}\n${updated(p.url)}" else p.desc, p.url in lists) {
-                    change { s.lists = s.lists.toggle(p.url) }
+                    s.lists = s.lists.toggle(p.url)
                 }
             }
             (lists - presetUrls).forEach { url ->
                 ListItem(
                     headlineContent = { Text(url.substringAfter("://").substringBefore('/')) },
                     supportingContent = { Text(updated(url)) },
-                    trailingContent = { IconButton({ change { s.lists = s.lists - url } }) { Icon(Icons.Rounded.Delete, "Remove") } },
+                    trailingContent = { IconButton({ s.lists = s.lists - url }) { Icon(Icons.Rounded.Delete, "Remove") } },
                     colors = rowColors,
                 )
             }
             Row(Modifier.padding(start = 16.dp, end = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(newUrl, { newUrl = it }, Modifier.weight(1f), placeholder = { Text("Add list by URL") }, singleLine = true)
-                IconButton({ newUrl.trim().takeIf { it.startsWith("http") }?.let { u -> change { s.lists = s.lists + u }; newUrl = "" } }) {
+                IconButton({ newUrl.trim().takeIf { it.startsWith("http") }?.let { u -> s.lists = s.lists + u; newUrl = "" } }) {
                     Icon(Icons.Rounded.Add, "Add list")
                 }
             }
@@ -262,7 +263,7 @@ fun AdBlockScreen(s: Settings, change: (() -> Unit) -> Unit) {
                 scope.launch {
                     val errs = withContext(Dispatchers.IO) { s.refreshLists(maxAgeMs = 0) }
                     refreshStatus = if (errs.isEmpty()) null else "Some lists failed to update:\n" + errs.entries.joinToString("\n") { "${it.key}: ${it.value}" }
-                    change {}
+                    FilterVpnService.reconfigure(ctx) // lists changed on disk, not in prefs
                 }
             }) {
                 Icon(Icons.Rounded.Refresh, null, Modifier.size(18.dp))
@@ -275,28 +276,28 @@ fun AdBlockScreen(s: Settings, change: (() -> Unit) -> Unit) {
 }
 
 @Composable
-fun PrivacyScreen(s: Settings, change: (() -> Unit) -> Unit) {
+fun PrivacyScreen(s: Settings) {
     ScreenColumn {
         Group("Disguise traffic") {
             SwitchRow(Icons.Rounded.Lock, "Hide site names in secure connections", checked = s.sniSplit) { v ->
-                change { s.sniSplit = v }
+                s.sniSplit = v
             }
             SwitchRow(Icons.Rounded.CallSplit, "Fragment secure handshakes", checked = s.tlsFrag) { v ->
-                change { s.tlsFrag = v }
+                s.tlsFrag = v
             }
             SwitchRow(Icons.Rounded.Http, "Disguise unencrypted requests", checked = s.hostTricks) { v ->
-                change { s.hostTricks = v }
+                s.hostTricks = v
             }
             SwitchRow(Icons.Rounded.Speed, "Turn off QUIC", "Lets the options above cover more apps", s.blockQuic) { v ->
-                change { s.blockQuic = v }
+                s.blockQuic = v
             }
         }
-        RouteGroup(s, change)
+        RouteGroup(s)
     }
 }
 
 @Composable
-fun RouteGroup(s: Settings, change: (() -> Unit) -> Unit) {
+fun RouteGroup(s: Settings) {
     val mode = s.routeMode
     val savedProxy = s.proxyUrl
     var proxy by remember(savedProxy) { mutableStateOf(savedProxy) }
@@ -310,15 +311,15 @@ fun RouteGroup(s: Settings, change: (() -> Unit) -> Unit) {
                 headlineContent = { Text(title) }, supportingContent = sub?.let { { Text(it) } },
                 trailingContent = { RadioButton(mode == key, null) },
                 colors = rowColors,
-                modifier = Modifier.selectable(mode == key, role = Role.RadioButton) { change { s.routeMode = key } },
+                modifier = Modifier.selectable(mode == key, role = Role.RadioButton) { s.routeMode = key },
             )
         }
         if (mode == "proxy") Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(proxy, { proxy = it }, Modifier.fillMaxWidth(), label = { Text("Proxy address") },
                 placeholder = { Text("socks5://host:port or http://host:port") }, singleLine = true)
-            FilledTonalButton({ change { s.proxyUrl = proxy.trim() } }) { Text("Save") }
+            FilledTonalButton({ s.proxyUrl = proxy.trim() }) { Text("Save") }
         }
-        if (mode == "wg") WgProfiles(s, change)
+        if (mode == "wg") WgProfiles(s)
     }
     if (mode == "wg") Hint("DNS doesn't go through the tunnel.")
 }
