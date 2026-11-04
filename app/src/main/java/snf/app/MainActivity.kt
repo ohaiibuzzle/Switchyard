@@ -5,6 +5,7 @@ import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -14,6 +15,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -71,6 +73,7 @@ private val TABS = listOf(
 fun App(s: Settings) {
     val ctx = LocalContext.current
     var tab by remember { mutableIntStateOf(0) }
+    var activity by remember { mutableStateOf(false) } // Activity log screen, opened from Home
     // Bumped on every settings write so screens re-read prefs.
     var rev by remember { mutableIntStateOf(0) }
     val change: (() -> Unit) -> Unit = { it(); rev++; FilterVpnService.reconfigure(ctx) }
@@ -78,9 +81,14 @@ fun App(s: Settings) {
     val tabScroll = remember { List(TABS.size) { ScrollState(0) } }
     Scaffold(
         Modifier.nestedScroll(scroll.nestedScrollConnection),
-        topBar = { LargeTopAppBar(title = { Text(TABS[tab].title) }, scrollBehavior = scroll) },
+        topBar = {
+            if (activity) TopAppBar(
+                title = { Text("Activity") },
+                navigationIcon = { IconButton({ activity = false }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
+            ) else LargeTopAppBar(title = { Text(TABS[tab].title) }, scrollBehavior = scroll)
+        },
         bottomBar = {
-            NavigationBar {
+            if (!activity) NavigationBar {
                 TABS.forEachIndexed { i, t ->
                     NavigationBarItem(
                         selected = tab == i, onClick = { tab = i },
@@ -91,12 +99,14 @@ fun App(s: Settings) {
         },
     ) { pad ->
         Box(Modifier.padding(pad).fillMaxSize()) {
-            // Apps stays outside key(rev) so toggling doesn't reload the app list or clear the search.
-            if (tab == 2) AppsScreen(s, change, rev)
+            BackHandler(activity) { activity = false }
+            // Apps and Activity stay outside key(rev) so a toggle doesn't reset their lists.
+            if (activity) ActivityScreen(s, change, rev)
+            else if (tab == 2) AppsScreen(s, change, rev)
             else CompositionLocalProvider(LocalScroll provides tabScroll[tab]) {
                 key(rev) {
                     when (tab) {
-                        0 -> HomeScreen(s) { tab = it }
+                        0 -> HomeScreen(s, onActivity = { activity = true }) { tab = it }
                         1 -> DnsScreen(s, change)
                         3 -> AdBlockScreen(s, change)
                         4 -> PrivacyScreen(s, change)
@@ -108,7 +118,7 @@ fun App(s: Settings) {
 }
 
 @Composable
-fun HomeScreen(s: Settings, goTo: (Int) -> Unit) {
+fun HomeScreen(s: Settings, onActivity: () -> Unit, goTo: (Int) -> Unit) {
     val act = LocalContext.current as MainActivity
     var running by remember { mutableStateOf(FilterVpnService.running) }
     var err by remember { mutableStateOf<String?>(null) }
@@ -148,6 +158,9 @@ fun HomeScreen(s: Settings, goTo: (Int) -> Unit) {
             NavRow(Icons.Rounded.Apps, "App access", s.set("blocked").size.let { if (it == 0) "All apps allowed" else "$it ${if (it == 1) "app" else "apps"} blocked" }) { goTo(2) }
             NavRow(Icons.Rounded.Block, "Ad blocking", if (s.bool("adblock")) "On · $lists ${if (lists == 1) "list" else "lists"}" else "Off") { goTo(3) }
             NavRow(Icons.Rounded.VisibilityOff, "Privacy", privacy) { goTo(4) }
+        }
+        Group {
+            NavRow(Icons.Rounded.History, "Activity", if (s.bool("logOn")) "Recording" else "Off", onActivity)
         }
     }
 }

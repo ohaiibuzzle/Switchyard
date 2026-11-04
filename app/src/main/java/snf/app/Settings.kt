@@ -56,6 +56,13 @@ class Settings(ctx: Context) {
         }.apply()
     }
 
+    /** Adds a domain rule; a domain is either allowed or blocked, never both. */
+    fun addRule(allow: Boolean, domain: String) {
+        val (to, from) = if (allow) "allowDomains" to "blockDomains" else "blockDomains" to "allowDomains"
+        put(from, set(from) - domain)
+        put(to, set(to) + domain)
+    }
+
     fun toggleIn(k: String, item: String) = put(k, set(k).let { if (item in it) it - item else it + item })
 
     /** "off", "proxy" or "wg". Falls back to the pre-WireGuard proxyOn switch. */
@@ -105,6 +112,9 @@ class Settings(ctx: Context) {
         put("proxyUrl", if (routeMode() == "proxy") str("proxyUrl") else "")
         put("wgConf", if (routeMode() == "wg") activeWg()?.conf.orEmpty() else "")
         put("routeUids", JSONArray(set("proxied").map { it.toInt() }))
+        put("allowDomains", JSONArray(set("allowDomains").toList()))
+        put("blockDomains", JSONArray(set("blockDomains").toList()))
+        put("log", bool("logOn"))
     }.toString()
 
     /** Downloads lists that are missing or older than [maxAgeMs]. Returns per-URL errors. Blocking. */
