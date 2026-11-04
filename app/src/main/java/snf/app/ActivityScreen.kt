@@ -15,7 +15,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 
 /** One activity-log entry from the core (see core/events.go). */
@@ -28,16 +30,22 @@ data class Ev(
 private val events = mutableStateListOf<Ev>()
 private var lastSeq = 0L
 
-private fun fetchEvents() {
-    val a = JSONArray(snf.core.Core.events(lastSeq))
-    for (i in 0 until a.length()) a.getJSONObject(i).run {
-        events += Ev(
-            getLong("seq"), getLong("t"), getInt("uid"), getString("proto"),
-            optString("dst").ifEmpty { null }, optString("host").ifEmpty { null },
-            getString("action"), optString("reason").ifEmpty { null }, optString("err").ifEmpty { null },
-        )
+private suspend fun fetchEvents() {
+    // Off the main thread: the core call and parsing a full log can take a while.
+    val new = withContext(Dispatchers.IO) {
+        val a = JSONArray(snf.core.Core.events(lastSeq))
+        List(a.length()) { i ->
+            a.getJSONObject(i).run {
+                Ev(
+                    getLong("seq"), getLong("t"), getInt("uid"), getString("proto"),
+                    optString("dst").ifEmpty { null }, optString("host").ifEmpty { null },
+                    getString("action"), optString("reason").ifEmpty { null }, optString("err").ifEmpty { null },
+                )
+            }
+        }
     }
-    if (a.length() > 0) lastSeq = events.last().seq
+    events += new
+    if (new.isNotEmpty()) lastSeq = new.last().seq
     if (events.size > 2000) events.removeRange(0, events.size - 2000) // mirrors maxEvents in core/events.go
 }
 

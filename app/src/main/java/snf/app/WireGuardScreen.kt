@@ -15,13 +15,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 @Composable
 fun WgStatus() {
     var age by remember { mutableLongStateOf(-2L) }
     val err = FilterVpnService.lastError
-    LaunchedEffect(Unit) { while (true) { age = snf.core.Core.wgHandshakeAge(); delay(1000) } }
+    // Off the main thread: it waits on the tunnel lock, held for seconds while a profile starts.
+    LaunchedEffect(Unit) { while (true) { age = withContext(Dispatchers.IO) { snf.core.Core.wgHandshakeAge() }; delay(1000) } }
     val (text, ok) = when {
         err != null -> "Couldn't apply: $err" to false
         age == -2L -> "Not connected" to false
