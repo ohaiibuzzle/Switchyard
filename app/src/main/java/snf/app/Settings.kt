@@ -40,7 +40,7 @@ data class ListPreset(val name: String, val desc: String, val url: String)
 
 val LIST_PRESETS = listOf(
     ListPreset("StevenBlack", "Balanced · ads and malware", "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"),
-    ListPreset("HaGeZi Pro", "Strict · ads, tracking and more", "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/pro.txt"),
+    ListPreset("HaGeZi Pro", "Strict · ads, tracking and more", "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/pro-onlydomains.txt"),
     ListPreset("OISD Small", "Light · fewest false blocks", "https://small.oisd.nl/"),
 )
 
