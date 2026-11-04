@@ -1,0 +1,78 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: write # attach the APK to the GitHub release on tags
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: 30.0.16248370
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: core/go.mod
+          cache-dependency-path: core/go.sum
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Test Go core
+        working-directory: core
+        run: |
+          go test ./...
+          GOOS=android GOARCH=arm64 go vet ./...
+
+      - name: Install NDK and gomobile
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+          cd core && go install golang.org/x/mobile/cmd/gomobile && "$(go env GOPATH)/bin/gomobile" init
+
+      - name: Build core.aar
+        run: ./build-core.sh
+
+      # gradle.properties points at Android Studio's JDK on macOS; the user-home file takes precedence.
+      - name: Use the runner's JDK
+        run: mkdir -p ~/.gradle && echo "org.gradle.java.home=$JAVA_HOME" >> ~/.gradle/gradle.properties
+
+      - name: Build debug APK
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: ./gradlew assembleDebug
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        with:
+          name: app-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Build signed release APK
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          SNF_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          SNF_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          SNF_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          export SNF_KEYSTORE="$RUNNER_TEMP/release.jks"
+          echo "$KEYSTORE_BASE64" | base64 -d > "$SNF_KEYSTORE"
+          ./gradlew assembleRelease
+          mv app/build/outputs/apk/release/app-release.apk "snf-$GITHUB_REF_NAME.apk"
+
+      - uses: softprops/action-gh-release@v3
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: snf-${{ github.ref_name }}.apk
+          generate_release_notes: true

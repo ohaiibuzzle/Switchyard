@@ -13,6 +13,18 @@ android {
         versionCode = 1
         versionName = "0.1"
     }
+    // Release signing comes from the environment (CI secrets, or your shell); without it the release APK is unsigned.
+    signingConfigs {
+        System.getenv("SNF_KEYSTORE")?.let { ks ->
+            create("release") {
+                storeFile = file(ks)
+                storePassword = System.getenv("SNF_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("SNF_KEY_ALIAS")
+                keyPassword = System.getenv("SNF_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes { release { signingConfig = signingConfigs.findByName("release") } }
     buildFeatures { compose = true }
 }
 
