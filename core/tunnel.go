@@ -30,14 +30,15 @@ import (
 )
 
 var (
-	mu  sync.Mutex
+	mu  sync.Mutex // serialises Start, Reconfigure and Stop
 	stk *stack.Stack
 	tun int
 )
 
 func swap(s *state) {
 	if old := cur.Swap(s); old != nil {
-		old.up.Close()
+		// Queries already in flight still hold old; let them finish (upstream timeout is 5s).
+		time.AfterFunc(10*time.Second, func() { old.up.Close() })
 	}
 }
 
@@ -83,6 +84,11 @@ func Start(fd, mtu int, cfg string, c Callback) error {
 
 // Reconfigure swaps settings without dropping the tunnel. Existing flows keep their verdicts.
 func Reconfigure(cfg string) error {
+	mu.Lock()
+	defer mu.Unlock()
+	if stk == nil {
+		return nil // stopped or not started yet: Start reads the latest settings itself
+	}
 	s, err := newState(cfg)
 	if err != nil {
 		return err
