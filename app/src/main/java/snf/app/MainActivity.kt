@@ -15,8 +15,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteItem
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffoldDefaults
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -74,40 +80,49 @@ fun App(s: Settings) {
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     val tabState = rememberSaveableStateHolder() // keeps each tab's scroll position across tab switches
     val open = { p: Page -> page = p }
-    Scaffold(
-        Modifier.nestedScroll(scroll.nestedScrollConnection),
-        topBar = {
-            val p = page
-            if (p != null) TopAppBar(
-                title = { Text(p.title) },
-                navigationIcon = { IconButton({ page = null }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
-            ) else LargeTopAppBar(title = { Text(tab.title) }, scrollBehavior = scroll)
-        },
-        bottomBar = {
-            if (page == null) NavigationBar {
-                Tab.entries.forEach { t ->
-                    NavigationBarItem(
-                        selected = tab == t, onClick = { tab = t },
-                        icon = { Icon(t.icon, null) }, label = { Text(t.label) },
-                    )
-                }
+    // Bar on phones, rail on tablets; hidden on sub-pages, which have a back arrow instead.
+    val navType = if (page != null) NavigationSuiteType.None
+        else NavigationSuiteScaffoldDefaults.navigationSuiteType(currentWindowAdaptiveInfoV2())
+    NavigationSuiteScaffold(
+        navigationItems = {
+            Tab.entries.forEach { t ->
+                NavigationSuiteItem(
+                    selected = tab == t, onClick = { tab = t },
+                    icon = { Icon(t.icon, null) }, label = { Text(t.label) },
+                    navigationSuiteType = navType,
+                )
             }
         },
-    ) { pad ->
-        Box(Modifier.padding(pad).fillMaxSize()) {
-            BackHandler(page != null) { page = null }
-            when (page) {
-                Page.Activity -> ActivityScreen(s)
-                Page.AdBlock -> AdBlockScreen(s)
-                Page.Disguise -> DisguiseScreen(s)
-                Page.Route -> ScreenColumn { RouteGroup(s) }
-                null -> tabState.SaveableStateProvider(tab) {
-                    when (tab) {
-                        Tab.Home -> HomeScreen(s, open) { tab = it }
-                        Tab.Dns -> DnsScreen(s)
-                        Tab.Apps -> AppsScreen(s)
-                        Tab.Tailscale -> TailscaleScreen(s)
-                        Tab.Privacy -> PrivacyScreen(s, open)
+        navigationSuiteType = navType,
+    ) {
+        // Capped and centred so rows stay readable on wide screens.
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+            Scaffold(
+                Modifier.widthIn(max = 720.dp).nestedScroll(scroll.nestedScrollConnection),
+                topBar = {
+                    val p = page
+                    if (p != null) TopAppBar(
+                        title = { Text(p.title) },
+                        navigationIcon = { IconButton({ page = null }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
+                    ) else LargeTopAppBar(title = { Text(tab.title) }, scrollBehavior = scroll)
+                },
+            ) { pad ->
+                Box(Modifier.padding(pad).fillMaxSize()) {
+                    BackHandler(page != null) { page = null }
+                    when (page) {
+                        Page.Activity -> ActivityScreen(s)
+                        Page.AdBlock -> AdBlockScreen(s)
+                        Page.Disguise -> DisguiseScreen(s)
+                        Page.Route -> ScreenColumn { RouteGroup(s) }
+                        null -> tabState.SaveableStateProvider(tab) {
+                            when (tab) {
+                                Tab.Home -> HomeScreen(s, open) { tab = it }
+                                Tab.Dns -> DnsScreen(s)
+                                Tab.Apps -> AppsScreen(s)
+                                Tab.Tailscale -> TailscaleScreen(s)
+                                Tab.Privacy -> PrivacyScreen(s, open)
+                            }
+                        }
                     }
                 }
             }
