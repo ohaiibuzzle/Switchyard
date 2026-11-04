@@ -146,7 +146,6 @@ fun DnsScreen(s: Settings) {
                 s.blockBypass = v
             }
         }
-        AdBlockGroups(s)
     }
 }
 
@@ -225,8 +224,10 @@ fun AppsScreen(s: Settings) {
     }
 }
 
+fun adBlockSummary(s: Settings) = s.lists.size.let { if (s.adblock) "On · $it ${if (it == 1) "list" else "lists"}" else "Off" }
+
 @Composable
-fun ColumnScope.AdBlockGroups(s: Settings) {
+fun AdBlockScreen(s: Settings) = ScreenColumn {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var newUrl by remember { mutableStateOf("") }
@@ -236,7 +237,7 @@ fun ColumnScope.AdBlockGroups(s: Settings) {
     fun updated(url: String) = s.listFile(url).let {
         if (it.exists()) "Updated " + DateUtils.getRelativeTimeSpanString(it.lastModified()) else "Not downloaded yet"
     }
-    Group("Ad blocking") {
+    Group {
         SwitchRow(Icons.Rounded.Block, "Block ads and trackers", checked = s.adblock) { v ->
             s.adblock = v
         }
@@ -278,9 +279,28 @@ fun ColumnScope.AdBlockGroups(s: Settings) {
 }
 
 @Composable
-fun PrivacyScreen(s: Settings) {
+fun PrivacyScreen(s: Settings, open: (Page) -> Unit) {
+    val route = when (s.routeMode) {
+        "proxy" -> "Through a proxy"; "wg" -> "Through ${s.activeWg()?.name ?: "WireGuard"}"; "ts" -> "Through Tailscale"; else -> "Directly"
+    }
     ScreenColumn {
-        Group("Disguise traffic") {
+        Group {
+            NavRow(Icons.Rounded.Block, "Ad blocking", adBlockSummary(s)) { open(Page.AdBlock) }
+            NavRow(Icons.Rounded.Lock, "Disguise traffic", s.tricksOn().let { if (it == 0) "Off" else "$it on" }) { open(Page.Disguise) }
+            NavRow(Icons.Rounded.AltRoute, "Route traffic", route) { open(Page.Route) }
+        }
+        Group {
+            SwitchRow(Icons.Rounded.Router, "Skip local network", "Casting and sharing bypass the filter. Applies on restart.", s.skipLan) { v ->
+                s.skipLan = v
+            }
+        }
+    }
+}
+
+@Composable
+fun DisguiseScreen(s: Settings) {
+    ScreenColumn {
+        Group {
             SwitchRow(Icons.Rounded.Lock, "Hide site names in secure connections", checked = s.sniSplit) { v ->
                 s.sniSplit = v
             }
@@ -294,12 +314,6 @@ fun PrivacyScreen(s: Settings) {
                 s.blockQuic = v
             }
         }
-        RouteGroup(s)
-        Group {
-            SwitchRow(Icons.Rounded.Router, "Skip local network", "Casting and sharing bypass the filter. Applies on restart.", s.skipLan) { v ->
-                s.skipLan = v
-            }
-        }
     }
 }
 
@@ -309,12 +323,12 @@ fun RouteGroup(s: Settings) {
     val savedProxy = s.proxyUrl
     var proxy by remember(savedProxy) { mutableStateOf(savedProxy) }
     if (mode == "ts") {
-        Group("Route traffic") {
+        Group {
             ListItem(headlineContent = { Text("Through Tailscale") }, supportingContent = { Text("Proxy and WireGuard are off while Tailscale is on") }, colors = rowColors)
         }
         return
     }
-    Group("Route traffic") {
+    Group {
         listOf(
             Triple("off", "Directly", null),
             Triple("proxy", "Through a proxy", "TCP only"),

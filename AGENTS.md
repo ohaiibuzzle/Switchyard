@@ -32,7 +32,7 @@ app/src/main/java/snf/app/
   Settings.kt         SharedPreferences "snf" -> configJson(); presets; WireGuard profiles; list downloads
   MainActivity.kt     theme (Material You), Tab enum, nav scaffold
   HomeScreen.kt       power button, status notices, summary rows
-  Screens.kt          shared row components + DNS (with ad blocking) / Apps / Privacy screens
+  Screens.kt          shared row components + DNS / Apps screens, Privacy menu and its sub-pages
   WireGuardScreen.kt  WireGuard status, profile list, config editor
   TailscaleScreen.kt  Tailscale switch, status and sign-in, control URL and auth key
   ActivityScreen.kt   log view (polls Core.events once a second), your rules, per-entry action sheet
@@ -76,7 +76,7 @@ build-core.sh         rebuilds app/libs/core.aar
   - Multi-key writes (`setDns`, `addRule`, `removeRule`, `saveWg`) are one `edit()`.
   - Screens just write `Settings`. Its prefs listener calls `FilterVpnService.reconfigure`, which merges a burst of writes into one reconfigure. Changes outside prefs (a list download) call it directly.
   - Engine start, reconfigure and stop all run on one single-thread executor in `FilterVpnService`, so they apply in order. `starting`, `running` and `lastError` are Compose state; the UI reads them directly.
-  - Tabs are the `Tab` enum. `rememberSaveableStateHolder` keeps each tab's scroll position.
+  - Tabs are the `Tab` enum. `rememberSaveableStateHolder` keeps each tab's scroll position. Sub-pages (Activity, Ad blocking, Disguise, Route) are the `Page` enum, opened over a tab with a back arrow.
 
 ## Gotchas
 

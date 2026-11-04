@@ -18,7 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun HomeScreen(s: Settings, onActivity: () -> Unit, goTo: (Tab) -> Unit) {
+fun HomeScreen(s: Settings, open: (Page) -> Unit, goTo: (Tab) -> Unit) {
     val act = LocalContext.current as MainActivity
     val running = FilterVpnService.running
     val starting = FilterVpnService.starting
@@ -68,17 +68,16 @@ fun HomeScreen(s: Settings, onActivity: () -> Unit, goTo: (Tab) -> Unit) {
             if (s.tricksOn() > 0) "Disguise on" else null,
             when (s.routeMode) { "wg" -> "via ${s.activeWg()?.name ?: "WireGuard"}"; "proxy" -> "via proxy"; else -> null },
         ).joinToString(" · ").ifEmpty { "Off" }
-        val lists = s.lists.size
         Group {
             val dns = (preset?.let { "${it.name} · ${dnsKind(it.url)}" } ?: "Custom server").let { if (s.routeMode == "ts" && s.tsDns) "Tailscale, then $it" else it }
             NavRow(Icons.Rounded.Dns, "Private DNS", dns) { goTo(Tab.Dns) }
             NavRow(Icons.Rounded.Apps, "App access", s.blockedUids.size.let { if (it == 0) "All apps allowed" else "$it ${if (it == 1) "app" else "apps"} blocked" }) { goTo(Tab.Apps) }
-            NavRow(Icons.Rounded.Block, "Ad blocking", if (s.adblock) "On · $lists ${if (lists == 1) "list" else "lists"}" else "Off") { goTo(Tab.Dns) }
+            NavRow(Icons.Rounded.Block, "Ad blocking", adBlockSummary(s)) { open(Page.AdBlock) }
             NavRow(Icons.Rounded.Hub, "Tailscale", if (s.routeMode == "ts") "On" else "Off") { goTo(Tab.Tailscale) }
             NavRow(Icons.Rounded.VisibilityOff, "Privacy", privacy) { goTo(Tab.Privacy) }
         }
         Group {
-            NavRow(Icons.Rounded.History, "Activity", if (s.logOn) "Recording" else "Off", onActivity)
+            NavRow(Icons.Rounded.History, "Activity", if (s.logOn) "Recording" else "Off") { open(Page.Activity) }
         }
     }
 }

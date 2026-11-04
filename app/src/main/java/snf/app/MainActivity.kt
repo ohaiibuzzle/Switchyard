@@ -57,29 +57,34 @@ fun AppTheme(content: @Composable () -> Unit) {
 
 enum class Tab(val title: String, val label: String, val icon: ImageVector) {
     Home("Network Filter", "Home", Icons.Rounded.Shield),
-    Dns("DNS and ad blocking", "DNS", Icons.Rounded.Dns),
+    Dns("DNS", "DNS", Icons.Rounded.Dns),
     Apps("App access", "Apps", Icons.Rounded.Apps),
     Tailscale("Tailscale", "Tailscale", Icons.Rounded.Hub),
     Privacy("Privacy", "Privacy", Icons.Rounded.VisibilityOff),
 }
 
+/** Sub-pages, opened over a tab with a back arrow. */
+enum class Page(val title: String) { Activity("Activity"), AdBlock("Ad blocking"), Disguise("Disguise traffic"), Route("Route traffic") }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun App(s: Settings) {
     var tab by remember { mutableStateOf(Tab.Home) }
-    var activity by remember { mutableStateOf(false) } // Activity log screen, opened from Home
+    var page by remember { mutableStateOf<Page?>(null) }
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     val tabState = rememberSaveableStateHolder() // keeps each tab's scroll position across tab switches
+    val open = { p: Page -> page = p }
     Scaffold(
         Modifier.nestedScroll(scroll.nestedScrollConnection),
         topBar = {
-            if (activity) TopAppBar(
-                title = { Text("Activity") },
-                navigationIcon = { IconButton({ activity = false }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
+            val p = page
+            if (p != null) TopAppBar(
+                title = { Text(p.title) },
+                navigationIcon = { IconButton({ page = null }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
             ) else LargeTopAppBar(title = { Text(tab.title) }, scrollBehavior = scroll)
         },
         bottomBar = {
-            if (!activity) NavigationBar {
+            if (page == null) NavigationBar {
                 Tab.entries.forEach { t ->
                     NavigationBarItem(
                         selected = tab == t, onClick = { tab = t },
@@ -90,15 +95,20 @@ fun App(s: Settings) {
         },
     ) { pad ->
         Box(Modifier.padding(pad).fillMaxSize()) {
-            BackHandler(activity) { activity = false }
-            if (activity) ActivityScreen(s)
-            else tabState.SaveableStateProvider(tab) {
-                when (tab) {
-                    Tab.Home -> HomeScreen(s, onActivity = { activity = true }) { tab = it }
-                    Tab.Dns -> DnsScreen(s)
-                    Tab.Apps -> AppsScreen(s)
-                    Tab.Tailscale -> TailscaleScreen(s)
-                    Tab.Privacy -> PrivacyScreen(s)
+            BackHandler(page != null) { page = null }
+            when (page) {
+                Page.Activity -> ActivityScreen(s)
+                Page.AdBlock -> AdBlockScreen(s)
+                Page.Disguise -> DisguiseScreen(s)
+                Page.Route -> ScreenColumn { RouteGroup(s) }
+                null -> tabState.SaveableStateProvider(tab) {
+                    when (tab) {
+                        Tab.Home -> HomeScreen(s, open) { tab = it }
+                        Tab.Dns -> DnsScreen(s)
+                        Tab.Apps -> AppsScreen(s)
+                        Tab.Tailscale -> TailscaleScreen(s)
+                        Tab.Privacy -> PrivacyScreen(s, open)
+                    }
                 }
             }
         }
