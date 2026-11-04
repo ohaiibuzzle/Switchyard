@@ -2,11 +2,13 @@ package snf.app
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -26,7 +28,10 @@ fun TailscaleScreen(s: Settings) {
             SwitchRow(Icons.Rounded.Hub, "Use Tailscale", "Reach your tailnet devices", on) { s.tsOn = it }
             if (on) TsStatus()
         }
-        if (on) TsAdvanced(s)
+        if (on) {
+            TsAdvanced(s) // above the device list, which can be long
+            TsDevices()
+        }
     }
 }
 
@@ -72,14 +77,51 @@ private fun TsStatus() {
     }
 }
 
+private data class TsPeer(val name: String, val ip: String, val os: String, val online: Boolean)
+
+@Composable
+private fun TsDevices() {
+    var peers by remember { mutableStateOf(emptyList<TsPeer>()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            val js = org.json.JSONArray(withContext(Dispatchers.IO) { snf.core.Core.tsPeers() })
+            peers = List(js.length()) { js.getJSONObject(it).run { TsPeer(getString("name"), getString("ip"), getString("os"), getBoolean("online")) } }
+            delay(3000)
+        }
+    }
+    if (peers.isEmpty()) return
+    Group("Devices") {
+        peers.forEach { p ->
+            ListItem(
+                headlineContent = { Text(p.name) },
+                supportingContent = { Text(if (p.online) listOf(p.ip, p.os).filter { it.isNotEmpty() }.joinToString(" · ") else "Offline") },
+                leadingContent = {
+                    Icon(if (p.os == "android" || p.os == "iOS") Icons.Rounded.Smartphone else Icons.Rounded.Computer, null,
+                        tint = if (p.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline)
+                },
+                colors = rowColors,
+            )
+        }
+    }
+}
+
 @Composable
 private fun TsAdvanced(s: Settings) {
     val savedUrl = s.tsControlUrl
     val savedKey = s.tsAuthKey
     var url by remember(savedUrl) { mutableStateOf(savedUrl) }
     var key by remember(savedKey) { mutableStateOf(savedKey) }
-    Group("Advanced") {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    Group {
+        ListItem(
+            headlineContent = { Text("Advanced") },
+            supportingContent = { Text("Control server and auth key") },
+            leadingContent = { Icon(Icons.Rounded.Tune, null) },
+            trailingContent = { Icon(if (open) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, if (open) "Collapse" else "Expand") },
+            colors = rowColors,
+            modifier = Modifier.clickable { open = !open },
+        )
+        if (open) Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(url, { url = it }, Modifier.fillMaxWidth(), label = { Text("Control server (optional)") },
                 placeholder = { Text("https://headscale.example.com") }, singleLine = true)
             OutlinedTextField(key, { key = it }, Modifier.fillMaxWidth(), label = { Text("Auth key (optional)") },

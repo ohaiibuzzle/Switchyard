@@ -8,6 +8,8 @@ import (
 	"net/netip"
 	"os"
 	"runtime"
+	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,6 +17,7 @@ import (
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/miekg/dns"
 	"tailscale.com/envknob"
+	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/net/netmon"
 	"tailscale.com/tsnet"
 )
@@ -146,6 +149,52 @@ func TsStatus() string {
 	}
 	b, _ := json.Marshal(out)
 	return string(b)
+}
+
+type tsPeer struct {
+	Name   string `json:"name"` // MagicDNS short name, what users type
+	IP     string `json:"ip"`
+	OS     string `json:"os"`
+	Online bool   `json:"online"`
+}
+
+// TsPeers is a JSON array of the devices this node can see, online ones first; "[]" when off.
+func TsPeers() string {
+	var st *ipnstate.Status
+	if t := tsCur.Load(); t != nil {
+		if lc, err := t.srv.LocalClient(); err == nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			st, _ = lc.Status(ctx)
+		}
+	}
+	b, _ := json.Marshal(peerList(st))
+	return string(b)
+}
+
+func peerList(st *ipnstate.Status) []tsPeer {
+	out := []tsPeer{}
+	if st == nil {
+		return out
+	}
+	for _, p := range st.Peer {
+		name, _, _ := strings.Cut(p.DNSName, ".")
+		if name == "" {
+			name = p.HostName
+		}
+		var ip string
+		if len(p.TailscaleIPs) > 0 {
+			ip = p.TailscaleIPs[0].String()
+		}
+		out = append(out, tsPeer{name, ip, p.OS, p.Online})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Online != out[j].Online {
+			return out[i].Online
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
 }
 
 // TsLogin asks for a fresh login URL (after a sign-out); it shows up in TsStatus.

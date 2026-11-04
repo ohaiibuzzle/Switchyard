@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/miekg/dns"
+	"tailscale.com/ipn/ipnstate"
+	"tailscale.com/types/key"
 )
 
 func TestInTailnet(t *testing.T) {
@@ -60,5 +62,26 @@ func TestTailscaleDNSFallback(t *testing.T) {
 		if err != nil || r.Rcode != c.want {
 			t.Errorf("%s: rcode %d err %v, want %d", name, r.Rcode, err, c.want)
 		}
+	}
+}
+
+func TestPeerList(t *testing.T) {
+	if got := peerList(nil); got == nil || len(got) != 0 {
+		t.Fatalf("nil status: %v, want empty non-nil (JSON [])", got)
+	}
+	st := &ipnstate.Status{Peer: map[key.NodePublic]*ipnstate.PeerStatus{
+		key.NewNode().Public(): {DNSName: "zed.tail1234.ts.net.", OS: "linux", Online: true, TailscaleIPs: []netip.Addr{netip.MustParseAddr("100.64.0.3")}},
+		key.NewNode().Public(): {HostName: "offline-box", OS: "windows"},
+		key.NewNode().Public(): {DNSName: "alpha.tail1234.ts.net.", Online: true},
+	}}
+	got := peerList(st)
+	want := []string{"alpha", "zed", "offline-box"} // online first, then by name
+	for i, p := range got {
+		if p.Name != want[i] {
+			t.Fatalf("order %d: %q, want %q (%+v)", i, p.Name, want[i], got)
+		}
+	}
+	if got[1].IP != "100.64.0.3" || got[2].IP != "" {
+		t.Fatalf("ips: %+v", got)
 	}
 }

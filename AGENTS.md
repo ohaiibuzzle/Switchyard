@@ -20,7 +20,7 @@ core/                 Go engine, bound to Java with gomobile -> app/libs/core.aa
   routing.go          config JSON -> immutable `state` (newState), per-flow routing, dnsDecision (rule precedence)
   events.go           in-memory activity log (last 2000), IP->domain memory
   wireguard.go        wg-quick parser -> UAPI, wireguard-go on its own netstack, WgHandshakeAge
-  tailscale.go        tsnet node (tsFor), tailnet routing, Tailscale DNS with fallback, TsStatus/TsLogin/TsLogout
+  tailscale.go        tsnet node (tsFor), tailnet routing, Tailscale DNS with fallback, TsStatus/TsPeers/TsLogin/TsLogout
   blocklist.go        domainSet: list parsing + suffix lookup
   desync.go           SNI split, TLS record fragmentation, HTTP Host tricks (pure byte functions)
   dialer.go           direct / SOCKS5 / HTTP CONNECT dialers
@@ -34,7 +34,7 @@ app/src/main/java/snf/app/
   HomeScreen.kt       power button, status notices, summary rows
   Screens.kt          shared row components + DNS / Apps screens, Privacy menu and its sub-pages
   WireGuardScreen.kt  WireGuard status, profile list, config editor
-  TailscaleScreen.kt  Tailscale switch, status and sign-in, control URL and auth key
+  TailscaleScreen.kt  Tailscale switch, status and sign-in, device list, collapsible control URL and auth key
   ActivityScreen.kt   log view (polls Core.events once a second), your rules, per-entry action sheet
 build-core.sh         rebuilds app/libs/core.aar
 ```
