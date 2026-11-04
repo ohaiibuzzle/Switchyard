@@ -48,11 +48,11 @@ val LIST_PRESETS = listOf(
 /** Flips [x] in or out of the set. */
 fun <T> Set<T>.toggle(x: T) = if (x in this) this - x else this + x
 
-/** What an app may do. `status` replaces the package name in the app list. */
-enum class Access(val title: String, val sub: String?, val status: String?) {
-    Allowed("Allowed", null, null),
-    Blocked("Blocked", "No network access", "No network access"),
-    Bypass("Bypass", "Skips filtering. Restarts the VPN.", "Bypasses Switchyard"),
+/** What an app may do. */
+enum class Access(val title: String, val sub: String?) {
+    Allowed("Allowed", null),
+    Blocked("Blocked", "No network access"),
+    Bypass("Bypass", "Skips filtering. Restarts the VPN."),
 }
 
 /**
@@ -98,18 +98,19 @@ class Settings private constructor(ctx: Context) {
     private fun str(k: String, def: String = "") = pref({ getString(k, def)!! }, { putString(k, it) })
     private fun strs(k: String) = pref({ getStringSet(k, emptySet())!!.toSet() }, { putStringSet(k, it) })
     // Uids are stored as strings, as they always were.
+    private fun Set<Int>.encoded() = map(Int::toString).toSet()
     private fun uids(k: String) = pref(
         { getStringSet(k, emptySet())!!.mapNotNull { it.toIntOrNull() }.toSet() },
-        { putStringSet(k, it.map(Int::toString).toSet()) },
+        { putStringSet(k, it.encoded()) },
     )
 
     var dnsUrl by str("dnsUrl", DNS_PRESETS[0].url)
     var dnsBootstrap by str("dnsBootstrap", DNS_PRESETS[0].bootstrap)
     var blockBypass by bool("blockBypass", true)
-    var blockedUids by uids("blocked")
+    var blockedUids by uids("blocked"); private set // write through setAccess
     var routedUids by uids("proxied") // apps sent via WireGuard/proxy when routeAll is off
     var routeAll by bool("routeAll", true)
-    var bypassPkgs by strs("bypass") // packages kept out of the tun entirely; packages, since that's what Builder takes
+    var bypassPkgs by strs("bypass"); private set // packages kept out of the tun entirely; packages, since that's what Builder takes
     var adblock by bool("adblock")
     var lists by strs("lists")
     var sniSplit by bool("sniSplit")
@@ -142,7 +143,7 @@ class Settings private constructor(ctx: Context) {
 
     /** Blocked and bypass are exclusive: bypassed traffic never reaches us, so it can't be blocked. */
     fun setAccess(uid: Int, pkg: String, a: Access) = write {
-        putStringSet("blocked", (if (a == Access.Blocked) blockedUids + uid else blockedUids - uid).map(Int::toString).toSet())
+        putStringSet("blocked", (if (a == Access.Blocked) blockedUids + uid else blockedUids - uid).encoded())
         putStringSet("bypass", if (a == Access.Bypass) bypassPkgs + pkg else bypassPkgs - pkg)
     }
 

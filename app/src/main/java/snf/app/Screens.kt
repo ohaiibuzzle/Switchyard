@@ -203,7 +203,7 @@ fun AppsScreen(s: Settings) {
                 val access = s.access(a.uid, a.pkg)
                 ListItem(
                     headlineContent = { Text(a.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    supportingContent = { Text(access.status ?: a.pkg, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    supportingContent = { Text(a.pkg, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     leadingContent = { AppIcon(a.pkg) },
                     trailingContent = {
                         when (access) {

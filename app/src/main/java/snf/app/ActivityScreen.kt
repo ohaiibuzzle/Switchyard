@@ -17,9 +17,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import kotlin.time.Duration.Companion.seconds
 
 /** One activity-log entry from the core (see core/events.go). */
 data class Ev(
