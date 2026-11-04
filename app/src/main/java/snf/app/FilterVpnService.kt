@@ -12,23 +12,35 @@ import android.net.VpnService
 import android.util.Log
 import java.net.InetAddress
 import java.net.InetSocketAddress
-import kotlin.concurrent.thread
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import java.util.concurrent.Executors
 
 class FilterVpnService : VpnService(), snf.core.Callback {
     companion object {
         const val STOP = "snf.STOP"
-        @Volatile var running = false
+        // Compose state, so the UI observes these instead of polling.
+        var starting by mutableStateOf(false)
             private set
-        @Volatile var lastError: String? = null
+        var running by mutableStateOf(false) // engine is up and filtering
+            private set
+        var lastError by mutableStateOf<String?>(null)
+            private set
+
+        // Every engine start/reconfigure/stop runs here, in order, so a stale config can't win.
+        private val engine = Executors.newSingleThreadExecutor()
 
         fun start(ctx: Context) = ctx.startForegroundService(Intent(ctx, FilterVpnService::class.java))
         fun stop(ctx: Context) = ctx.startService(Intent(ctx, FilterVpnService::class.java).setAction(STOP))
 
-        /** Pushes changed settings into a running engine. */
+        /** Pushes changed settings into a running (or starting) engine. */
         fun reconfigure(ctx: Context) {
-            if (!running) return
-            thread {
-                try { snf.core.Core.reconfigure(Settings(ctx).configJson()); lastError = null }
+            if (!running && !starting) return
+            val app = ctx.applicationContext
+            engine.execute {
+                if (!running) return@execute // a start still queued reads the latest settings itself
+                try { snf.core.Core.reconfigure(Settings(app).configJson()); lastError = null }
                 catch (e: Exception) { lastError = e.message; Log.e("snf", "reconfigure", e) }
             }
         }
@@ -38,14 +50,14 @@ class FilterVpnService : VpnService(), snf.core.Callback {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == STOP) {
-            shutdown()
+            engine.execute { shutdown() }
             return START_NOT_STICKY
         }
         cm = getSystemService(ConnectivityManager::class.java)
         startForeground(1, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        if (!running) {
-            running = true
-            thread { launch() }
+        if (!running && !starting) {
+            starting = true
+            engine.execute { launch() }
         }
         return START_STICKY
     }
@@ -53,7 +65,7 @@ class FilterVpnService : VpnService(), snf.core.Callback {
     private fun launch() {
         val settings = Settings(this)
         try {
-            if (settings.bool("adblock")) settings.refreshLists()
+            if (settings.adblock) settings.refreshLists()
             val b = Builder()
                 .setSession(getString(R.string.app_name))
                 .setMtu(MTU)
@@ -67,10 +79,13 @@ class FilterVpnService : VpnService(), snf.core.Callback {
             val pfd = b.establish() ?: error("VPN permission revoked")
             snf.core.Core.start(pfd.detachFd().toLong(), MTU.toLong(), settings.configJson(), this)
             lastError = null
+            running = true
         } catch (e: Exception) {
             lastError = e.message
             Log.e("snf", "start", e)
             shutdown()
+        } finally {
+            starting = false
         }
     }
 
@@ -79,6 +94,7 @@ class FilterVpnService : VpnService(), snf.core.Callback {
         a is java.net.Inet6Address && !a.isLinkLocalAddress && !a.isSiteLocalAddress && (a.address[0].toInt() and 0xfe) != 0xfc
     }
 
+    /** Only call on [engine]. */
     private fun shutdown() {
         snf.core.Core.stop()
         running = false
@@ -86,8 +102,8 @@ class FilterVpnService : VpnService(), snf.core.Callback {
         stopSelf()
     }
 
-    override fun onRevoke() = shutdown() // another VPN took over
-    override fun onDestroy() { if (running) shutdown(); super.onDestroy() }
+    override fun onRevoke() = engine.execute { shutdown() } // another VPN took over
+    override fun onDestroy() { engine.execute { if (running) shutdown() }; super.onDestroy() }
 
     override fun uidFor(proto: Long, srcIP: String, srcPort: Long, dstIP: String, dstPort: Long): Long = try {
         cm.getConnectionOwnerUid(

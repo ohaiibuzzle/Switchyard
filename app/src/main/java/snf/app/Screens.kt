@@ -1,17 +1,13 @@
 package snf.app
 
 import android.content.pm.ApplicationInfo
-import android.provider.OpenableColumns
 import android.text.format.DateUtils
 import android.util.LruCache
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
@@ -31,23 +27,18 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 // ---- Building blocks, styled after the system Settings app ----
 
-/** Per-tab scroll state, provided from above key(rev) so a settings change doesn't jump to the top. */
-val LocalScroll = compositionLocalOf<ScrollState?> { null }
-
 @Composable
 fun ScreenColumn(content: @Composable ColumnScope.() -> Unit) = Column(
-    Modifier.fillMaxSize().verticalScroll(LocalScroll.current ?: rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp),
+    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp),
     verticalArrangement = Arrangement.spacedBy(16.dp),
     content = content,
 )
@@ -64,7 +55,7 @@ fun Group(title: String? = null, content: @Composable ColumnScope.() -> Unit) = 
     }
 }
 
-private val rowColors @Composable get() = ListItemDefaults.colors(containerColor = Color.Transparent)
+val rowColors @Composable get() = ListItemDefaults.colors(containerColor = Color.Transparent)
 
 @Composable
 fun SwitchRow(icon: ImageVector?, title: String, sub: String? = null, checked: Boolean, onChange: (Boolean) -> Unit) = ListItem(
@@ -111,10 +102,11 @@ fun Hint(text: String) = Text(
 
 @Composable
 fun DnsScreen(s: Settings, change: (() -> Unit) -> Unit) {
-    val saved = s.dnsUrl()
-    var custom by remember { mutableStateOf(DNS_PRESETS.none { it.url == saved }) }
-    var url by remember { mutableStateOf(saved) }
-    var boot by remember { mutableStateOf(s.dnsBootstrap()) }
+    val saved = s.dnsUrl
+    // Keyed on the saved server so picking a preset or saving refreshes the form.
+    var custom by remember(saved) { mutableStateOf(DNS_PRESETS.none { it.url == saved }) }
+    var url by remember(saved) { mutableStateOf(saved) }
+    var boot by remember(saved) { mutableStateOf(s.dnsBootstrap) }
     ScreenColumn {
         Group("Provider") {
             DNS_PRESETS.forEach { p ->
@@ -125,7 +117,7 @@ fun DnsScreen(s: Settings, change: (() -> Unit) -> Unit) {
                     colors = rowColors,
                     modifier = Modifier.selectable(!custom && saved == p.url, role = Role.RadioButton) {
                         custom = false
-                        change { s.put("dnsUrl", p.url); s.put("dnsBootstrap", p.bootstrap) }
+                        change { s.setDns(p.url, p.bootstrap) }
                     },
                 )
             }
@@ -140,12 +132,12 @@ fun DnsScreen(s: Settings, change: (() -> Unit) -> Unit) {
                     placeholder = { Text("https://, tls:// or quic://") }, singleLine = true)
                 OutlinedTextField(boot, { boot = it }, Modifier.fillMaxWidth(), label = { Text("Server IPs (optional)") },
                     placeholder = { Text("1.2.3.4, 5.6.7.8") }, singleLine = true)
-                FilledTonalButton({ change { s.put("dnsUrl", url.trim()); s.put("dnsBootstrap", boot.trim()) } }) { Text("Save") }
+                FilledTonalButton({ change { s.setDns(url.trim(), boot.trim()) } }) { Text("Save") }
             }
         }
         Group("Protection") {
-            SwitchRow(Icons.Rounded.GppGood, "Block apps' own DNS", checked = s.bool("blockBypass", true)) { v ->
-                change { s.put("blockBypass", v) }
+            SwitchRow(Icons.Rounded.GppGood, "Block apps' own DNS", checked = s.blockBypass) { v ->
+                change { s.blockBypass = v }
             }
         }
     }
@@ -169,7 +161,7 @@ fun AppIcon(pkg: String) {
 }
 
 @Composable
-fun AppsScreen(s: Settings, change: (() -> Unit) -> Unit, rev: Int) {
+fun AppsScreen(s: Settings, change: (() -> Unit) -> Unit) {
     val ctx = LocalContext.current
     var apps by remember { mutableStateOf<List<AppEntry>?>(null) }
     var query by remember { mutableStateOf("") }
@@ -183,9 +175,9 @@ fun AppsScreen(s: Settings, change: (() -> Unit) -> Unit, rev: Int) {
                 .sortedBy { it.label.lowercase() }
         }
     }
-    val blocked = remember(rev) { s.set("blocked") }
-    val proxied = remember(rev) { s.set("proxied") }
-    val mode = remember(rev) { s.routeMode() }
+    val blocked = s.blockedUids
+    val proxied = s.routedUids
+    val mode = s.routeMode
     val proxyOn = mode != "off"
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         OutlinedTextField(
@@ -204,7 +196,7 @@ fun AppsScreen(s: Settings, change: (() -> Unit) -> Unit, rev: Int) {
         if (list == null) Box(Modifier.fillMaxWidth().padding(32.dp), Alignment.Center) { CircularProgressIndicator() }
         else LazyColumn(Modifier.clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))) {
             items(list.filter { (showSystem || !it.system) && (it.label.contains(query, true) || it.pkg.contains(query, true)) }, key = { it.pkg }) { a ->
-                val uid = a.uid.toString()
+                val uid = a.uid
                 val allowed = uid !in blocked
                 ListItem(
                     headlineContent = { Text(a.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -212,55 +204,53 @@ fun AppsScreen(s: Settings, change: (() -> Unit) -> Unit, rev: Int) {
                     leadingContent = { AppIcon(a.pkg) },
                     trailingContent = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (proxyOn) IconToggleButton(uid in proxied, { change { s.toggleIn("proxied", uid) } }) {
+                            if (proxyOn) IconToggleButton(uid in proxied, { change { s.routedUids = proxied.toggle(uid) } }) {
                                 Icon(Icons.Rounded.Public, "Route through tunnel")
                             }
                             Switch(allowed, null)
                         }
                     },
                     colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    modifier = Modifier.toggleable(allowed, role = Role.Switch) { change { s.toggleIn("blocked", uid) } },
+                    modifier = Modifier.toggleable(allowed, role = Role.Switch) { change { s.blockedUids = blocked.toggle(uid) } },
                 )
             }
         }
     }
 }
 
-// Outside the composable so the key(rev) re-read after a refresh doesn't wipe it.
-private var refreshStatus by mutableStateOf<String?>(null)
-
 @Composable
 fun AdBlockScreen(s: Settings, change: (() -> Unit) -> Unit) {
     val scope = rememberCoroutineScope()
     var newUrl by remember { mutableStateOf("") }
-    val lists = s.set("lists")
+    var refreshStatus by remember { mutableStateOf<String?>(null) }
+    val lists = s.lists
     val presetUrls = LIST_PRESETS.map { it.url }.toSet()
     fun updated(url: String) = s.listFile(url).let {
         if (it.exists()) "Updated " + DateUtils.getRelativeTimeSpanString(it.lastModified()) else "Not downloaded yet"
     }
     ScreenColumn {
         Group {
-            SwitchRow(Icons.Rounded.Block, "Block ads and trackers", checked = s.bool("adblock")) { v ->
-                change { s.put("adblock", v) }
+            SwitchRow(Icons.Rounded.Block, "Block ads and trackers", checked = s.adblock) { v ->
+                change { s.adblock = v }
             }
         }
         Group("Block lists") {
             LIST_PRESETS.forEach { p ->
                 SwitchRow(null, p.name, if (p.url in lists) "${p.desc}\n${updated(p.url)}" else p.desc, p.url in lists) {
-                    change { s.toggleIn("lists", p.url) }
+                    change { s.lists = lists.toggle(p.url) }
                 }
             }
             (lists - presetUrls).forEach { url ->
                 ListItem(
                     headlineContent = { Text(url.substringAfter("://").substringBefore('/')) },
                     supportingContent = { Text(updated(url)) },
-                    trailingContent = { IconButton({ change { s.toggleIn("lists", url) } }) { Icon(Icons.Rounded.Delete, "Remove") } },
+                    trailingContent = { IconButton({ change { s.lists = lists - url } }) { Icon(Icons.Rounded.Delete, "Remove") } },
                     colors = rowColors,
                 )
             }
             Row(Modifier.padding(start = 16.dp, end = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(newUrl, { newUrl = it }, Modifier.weight(1f), placeholder = { Text("Add list by URL") }, singleLine = true)
-                IconButton({ newUrl.trim().takeIf { it.startsWith("http") }?.let { u -> change { s.toggleIn("lists", u) }; newUrl = "" } }) {
+                IconButton({ newUrl.trim().takeIf { it.startsWith("http") }?.let { u -> change { s.lists = lists + u }; newUrl = "" } }) {
                     Icon(Icons.Rounded.Add, "Add list")
                 }
             }
@@ -287,17 +277,17 @@ fun AdBlockScreen(s: Settings, change: (() -> Unit) -> Unit) {
 fun PrivacyScreen(s: Settings, change: (() -> Unit) -> Unit) {
     ScreenColumn {
         Group("Disguise traffic") {
-            SwitchRow(Icons.Rounded.Lock, "Hide site names in secure connections", checked = s.bool("sniSplit")) { v ->
-                change { s.put("sniSplit", v) }
+            SwitchRow(Icons.Rounded.Lock, "Hide site names in secure connections", checked = s.sniSplit) { v ->
+                change { s.sniSplit = v }
             }
-            SwitchRow(Icons.Rounded.CallSplit, "Fragment secure handshakes", checked = s.bool("tlsFrag")) { v ->
-                change { s.put("tlsFrag", v) }
+            SwitchRow(Icons.Rounded.CallSplit, "Fragment secure handshakes", checked = s.tlsFrag) { v ->
+                change { s.tlsFrag = v }
             }
-            SwitchRow(Icons.Rounded.Http, "Disguise unencrypted requests", checked = s.bool("hostTricks")) { v ->
-                change { s.put("hostTricks", v) }
+            SwitchRow(Icons.Rounded.Http, "Disguise unencrypted requests", checked = s.hostTricks) { v ->
+                change { s.hostTricks = v }
             }
-            SwitchRow(Icons.Rounded.Speed, "Turn off QUIC", "Lets the options above cover more apps", s.bool("blockQuic")) { v ->
-                change { s.put("blockQuic", v) }
+            SwitchRow(Icons.Rounded.Speed, "Turn off QUIC", "Lets the options above cover more apps", s.blockQuic) { v ->
+                change { s.blockQuic = v }
             }
         }
         RouteGroup(s, change)
@@ -306,8 +296,9 @@ fun PrivacyScreen(s: Settings, change: (() -> Unit) -> Unit) {
 
 @Composable
 fun RouteGroup(s: Settings, change: (() -> Unit) -> Unit) {
-    val mode = s.routeMode()
-    var proxy by remember { mutableStateOf(s.str("proxyUrl")) }
+    val mode = s.routeMode
+    val savedProxy = s.proxyUrl
+    var proxy by remember(savedProxy) { mutableStateOf(savedProxy) }
     Group("Route traffic") {
         listOf(
             Triple("off", "Directly", null),
@@ -318,123 +309,15 @@ fun RouteGroup(s: Settings, change: (() -> Unit) -> Unit) {
                 headlineContent = { Text(title) }, supportingContent = sub?.let { { Text(it) } },
                 trailingContent = { RadioButton(mode == key, null) },
                 colors = rowColors,
-                modifier = Modifier.selectable(mode == key, role = Role.RadioButton) { change { s.put("routeMode", key) } },
+                modifier = Modifier.selectable(mode == key, role = Role.RadioButton) { change { s.routeMode = key } },
             )
         }
         if (mode == "proxy") Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(proxy, { proxy = it }, Modifier.fillMaxWidth(), label = { Text("Proxy address") },
                 placeholder = { Text("socks5://host:port or http://host:port") }, singleLine = true)
-            FilledTonalButton({ change { s.put("proxyUrl", proxy.trim()) } }) { Text("Save") }
+            FilledTonalButton({ change { s.proxyUrl = proxy.trim() } }) { Text("Save") }
         }
         if (mode == "wg") WgProfiles(s, change)
     }
     if (mode == "wg") Hint("DNS doesn't go through the tunnel.")
-}
-
-@Composable
-fun WgStatus() {
-    var age by remember { mutableLongStateOf(-2L) }
-    var err by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) {
-        while (true) { age = snf.core.Core.wgHandshakeAge(); err = FilterVpnService.lastError; delay(1000) }
-    }
-    val (text, ok) = when {
-        err != null -> "Couldn't apply: $err" to false
-        age == -2L -> "Not connected" to false
-        age == -1L -> "Waiting for the server to answer…" to false
-        // WireGuard re-handshakes every 2 min only while traffic flows, so silence after that is just idle.
-        age <= 180 -> "Connected · last handshake ${age}s ago" to true
-        else -> "Connected · idle for ${age / 60} min" to true
-    }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(if (ok) Icons.Rounded.CheckCircle else Icons.Rounded.Pending, null,
-            tint = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.width(8.dp))
-        Text(text, style = MaterialTheme.typography.bodyMedium)
-    }
-}
-
-@Composable
-fun WgProfiles(s: Settings, change: (() -> Unit) -> Unit) {
-    val profiles = s.wgProfiles()
-    val active = s.activeWg()?.name
-    // Profile being edited; name "" with editOld null means a new one.
-    var editing by remember { mutableStateOf<WgProfile?>(if (profiles.isEmpty()) WgProfile("", "") else null) }
-    var editOld by remember { mutableStateOf<String?>(null) }
-    var deleting by remember { mutableStateOf<String?>(null) }
-
-    if (profiles.isNotEmpty()) Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { WgStatus() }
-    profiles.forEach { p ->
-        ListItem(
-            headlineContent = { Text(p.name) },
-            supportingContent = { Text(p.endpoint) },
-            leadingContent = { RadioButton(p.name == active, null) },
-            trailingContent = {
-                Row {
-                    IconButton({ editing = p; editOld = p.name }) { Icon(Icons.Rounded.Edit, "Edit ${p.name}") }
-                    IconButton({ deleting = p.name }) { Icon(Icons.Rounded.Delete, "Delete ${p.name}") }
-                }
-            },
-            colors = rowColors,
-            modifier = Modifier.selectable(p.name == active, role = Role.RadioButton) { change { s.put("wgActive", p.name) } },
-        )
-    }
-    val e = editing
-    if (e == null) TextButton({ editing = WgProfile("", ""); editOld = null }, Modifier.padding(start = 8.dp, bottom = 8.dp)) {
-        Icon(Icons.Rounded.Add, null, Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
-        Text("Add config")
-    } else WgEditor(e, editOld, profiles.map { it.name }.toSet(), onCancel = if (profiles.isEmpty()) null else ({ editing = null })) { saved ->
-        change {
-            s.saveWg(editOld, saved)
-            // New profiles become active; renaming the active one keeps it active.
-            if (editOld == null || editOld == active) s.put("wgActive", saved.name)
-        }
-        editing = null
-    }
-
-    deleting?.let { name ->
-        AlertDialog(
-            onDismissRequest = { deleting = null },
-            title = { Text("Delete \"$name\"?") },
-            text = { Text("This can't be undone.") },
-            confirmButton = { TextButton({ change { s.deleteWg(name) }; deleting = null }) { Text("Delete") } },
-            dismissButton = { TextButton({ deleting = null }) { Text("Cancel") } },
-        )
-    }
-}
-
-@Composable
-fun WgEditor(start: WgProfile, oldName: String?, taken: Set<String>, onCancel: (() -> Unit)?, onSave: (WgProfile) -> Unit) {
-    val ctx = LocalContext.current
-    var name by remember(start) { mutableStateOf(start.name) }
-    var conf by remember(start) { mutableStateOf(start.conf) }
-    val import = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        ctx.contentResolver.openInputStream(uri)?.use { conf = it.readBytes().decodeToString() }
-        if (name.isBlank()) ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-            if (c.moveToFirst()) name = c.getString(0).substringBeforeLast(".conf")
-        }
-    }
-    val nameError = when {
-        name.isBlank() -> "Give it a name"
-        name.trim() != oldName && name.trim() in taken -> "That name is already used"
-        else -> null
-    }
-    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(if (oldName == null) "New config" else "Edit config", style = MaterialTheme.typography.titleSmall)
-        OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Name") }, singleLine = true,
-            isError = nameError != null && name.isNotEmpty(), supportingText = nameError?.takeIf { name.isNotEmpty() }?.let { { Text(it) } })
-        OutlinedTextField(
-            conf, { conf = it }, Modifier.fillMaxWidth(), label = { Text("WireGuard config") },
-            placeholder = { Text("[Interface]\nPrivateKey = …\nAddress = …\n\n[Peer]\n…") },
-            textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-            minLines = 4, maxLines = 12,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton({ import.launch(arrayOf("*/*")) }) { Text("Import file") }
-            if (onCancel != null) TextButton(onCancel) { Text("Cancel") }
-            FilledTonalButton({ onSave(WgProfile(name.trim(), conf.trim())) }, enabled = nameError == null && conf.isNotBlank()) { Text("Save") }
-        }
-    }
 }

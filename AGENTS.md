@@ -16,8 +16,8 @@ What the app does:
 ```
 core/                 Go engine, bound to Java with gomobile -> app/libs/core.aar (git-ignored)
   tunnel.go           (linux) Start/Reconfigure/Stop, gVisor netstack on the tun fd, TCP/UDP forwarders, DNS serving
-  routing.go          config JSON + immutable `state` snapshot, per-flow routing (direct / proxy / WireGuard)
-  events.go           in-memory activity log (ring of 2000), IP->domain memory, dnsDecision (rule precedence)
+  routing.go          config JSON -> immutable `state` (newState), per-flow routing, dnsDecision (rule precedence)
+  events.go           in-memory activity log (last 2000), IP->domain memory
   wireguard.go        wg-quick parser -> UAPI, wireguard-go on its own netstack, WgHandshakeAge
   blocklist.go        domainSet: list parsing + suffix lookup
   desync.go           SNI split, TLS record fragmentation, HTTP Host tricks (pure byte functions)
@@ -27,8 +27,10 @@ core/                 Go engine, bound to Java with gomobile -> app/libs/core.aa
 app/src/main/java/snf/app/
   FilterVpnService.kt builds the tun, hands the fd to core, implements Callback
   Settings.kt         SharedPreferences "snf" -> configJson(); presets; WireGuard profiles; list downloads
-  MainActivity.kt     theme (Material You), nav scaffold, Home screen
+  MainActivity.kt     theme (Material You), Tab enum, nav scaffold
+  HomeScreen.kt       power button, status notices, summary rows
   Screens.kt          shared row components + DNS / Apps / Ad-block / Privacy screens
+  WireGuardScreen.kt  WireGuard status, profile list, config editor
   ActivityScreen.kt   log view (polls Core.events once a second), your rules, per-entry action sheet
 build-core.sh         rebuilds app/libs/core.aar
 ```
@@ -60,15 +62,16 @@ build-core.sh         rebuilds app/libs/core.aar
   - The WireGuard tunnel is reused when its config text is unchanged, so unrelated toggles don't drop VPN connections.
 - **TCP flows:** the engine dials the destination *before* accepting the app's connection, so a failed dial becomes a clean RST. Desync only touches the client's first flight of data.
 - **Logging:**
-  - It's off unless `log` is set in the config; then `record()` returns immediately and costs nothing.
+  - It's off unless `log` is set in the config; then `record()` returns after one atomic load.
   - Kotlin polls `Events(afterSeq)`. Sequence numbers never reset within the process, so a VPN restart doesn't confuse the poller. `Stop()` clears the log.
 - **Domain decisions:** `dnsDecision` applies, in order: your allow rule, your block rule, ad lists, the DNS-bypass list. Rules act **only at DNS time**, so apps holding a cached answer keep connecting until the TTL expires.
 - **WireGuard** handshakes lazily, so `startWG` sends one keepalive per peer to bring it up straight away.
 - **UI state:**
-  - Every settings write calls `change { … }`, which bumps `rev` and calls `FilterVpnService.reconfigure`.
-  - Screens are wrapped in `key(rev)` so they re-read prefs.
-  - The Apps tab sits outside `key(rev)` so its list and search survive.
-  - Scroll positions live in `LocalScroll`, above `key(rev)`.
+  - `Settings` exposes typed properties (`s.adblock`, `s.blockedUids`, …). Every read touches a Compose state counter that a prefs listener bumps, so composables recompose on any settings change. No manual re-keying.
+  - Multi-key writes (`setDns`, `addRule`, `removeRule`, `saveWg`) are one `edit()`.
+  - Every settings write from the UI goes through `change { … }`, which calls `FilterVpnService.reconfigure`.
+  - Engine start, reconfigure and stop all run on one single-thread executor in `FilterVpnService`, so they apply in order. `starting`, `running` and `lastError` are Compose state; the UI reads them directly.
+  - Tabs are the `Tab` enum. `rememberSaveableStateHolder` keeps each tab's scroll position.
 
 ## Gotchas
 

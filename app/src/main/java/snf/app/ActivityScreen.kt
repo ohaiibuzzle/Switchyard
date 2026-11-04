@@ -12,7 +12,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -22,7 +21,7 @@ import org.json.JSONArray
 /** One activity-log entry from the core (see core/events.go). */
 data class Ev(
     val seq: Long, val t: Long, val uid: Int, val proto: String,
-    val dst: String?, val host: String?, val action: String, val reason: String?,
+    val dst: String?, val host: String?, val action: String, val reason: String?, val err: String?,
 )
 
 // Outside the composable so leaving the screen doesn't drop what was fetched.
@@ -35,11 +34,11 @@ private fun fetchEvents() {
         events += Ev(
             getLong("seq"), getLong("t"), getInt("uid"), getString("proto"),
             optString("dst").ifEmpty { null }, optString("host").ifEmpty { null },
-            getString("action"), optString("reason").ifEmpty { null },
+            getString("action"), optString("reason").ifEmpty { null }, optString("err").ifEmpty { null },
         )
     }
     if (a.length() > 0) lastSeq = events.last().seq
-    if (events.size > 2000) events.removeRange(0, events.size - 2000)
+    if (events.size > 2000) events.removeRange(0, events.size - 2000) // mirrors maxEvents in core/events.go
 }
 
 private data class AppId(val label: String, val pkg: String?)
@@ -75,12 +74,12 @@ private fun reasonText(e: Ev) = when (e.action) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ActivityScreen(s: Settings, change: (() -> Unit) -> Unit, rev: Int) {
+fun ActivityScreen(s: Settings, change: (() -> Unit) -> Unit) {
     val ctx = LocalContext.current
-    val logOn = remember(rev) { s.bool("logOn") }
-    val allow = remember(rev) { s.set("allowDomains").sorted() }
-    val block = remember(rev) { s.set("blockDomains").sorted() }
-    val blockedApps = remember(rev) { s.set("blocked") }
+    val logOn = s.logOn
+    val allow = s.allowDomains.sorted()
+    val block = s.blockDomains.sorted()
+    val blockedApps = s.blockedUids
     var blockedOnly by remember { mutableStateOf(true) }
     var appFilter by remember { mutableStateOf<Int?>(null) }
     var selected by remember { mutableStateOf<Ev?>(null) }
@@ -94,7 +93,7 @@ fun ActivityScreen(s: Settings, change: (() -> Unit) -> Unit, rev: Int) {
         item {
             Group {
                 SwitchRow(Icons.Rounded.History, "Record activity", "Kept in memory until the filter stops", logOn) { v ->
-                    change { s.put("logOn", v) }
+                    change { s.logOn = v }
                 }
             }
         }
@@ -106,11 +105,11 @@ fun ActivityScreen(s: Settings, change: (() -> Unit) -> Unit, rev: Int) {
                         supportingContent = { Text(if (isAllow) "Always allowed" else "Always blocked") },
                         leadingContent = { Icon(if (isAllow) Icons.Rounded.CheckCircle else Icons.Rounded.Block, null) },
                         trailingContent = {
-                            IconButton({ change { s.put(if (isAllow) "allowDomains" else "blockDomains", s.set(if (isAllow) "allowDomains" else "blockDomains") - d) } }) {
+                            IconButton({ change { s.removeRule(d) } }) {
                                 Icon(Icons.Rounded.Delete, "Remove rule for $d")
                             }
                         },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        colors = rowColors,
                     )
                 }
                 Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -164,7 +163,7 @@ fun ActivityScreen(s: Settings, change: (() -> Unit) -> Unit, rev: Int) {
             ListItem(
                 headlineContent = { Text(e.host ?: e.dst ?: "?") },
                 supportingContent = {
-                    Text(listOfNotNull(app.label, e.dst.takeIf { e.host != null }, reasonText(e), e.reason.takeIf { e.action == "fail" }).joinToString(" · "))
+                    Text(listOfNotNull(app.label, e.dst.takeIf { e.host != null }, reasonText(e), e.err).joinToString(" · "))
                 },
             )
             HorizontalDivider()
@@ -174,9 +173,8 @@ fun ActivityScreen(s: Settings, change: (() -> Unit) -> Unit, rev: Int) {
                 SheetAction(Icons.Rounded.Block, "Always block $h") { change { s.addRule(false, h) }; close() }
             }
             if (app.pkg != null) {
-                val uid = e.uid.toString()
-                SheetAction(Icons.Rounded.Apps, if (uid in blockedApps) "Unblock ${app.label}" else "Block ${app.label}") {
-                    change { s.toggleIn("blocked", uid) }; close()
+                SheetAction(Icons.Rounded.Apps, if (e.uid in blockedApps) "Unblock ${app.label}" else "Block ${app.label}") {
+                    change { s.blockedUids = blockedApps.toggle(e.uid) }; close()
                 }
             }
             SheetAction(Icons.Rounded.FilterList, "Show only ${app.label}") { appFilter = e.uid; close() }

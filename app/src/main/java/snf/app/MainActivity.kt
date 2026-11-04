@@ -9,23 +9,19 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     private val vpnConsent = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -41,7 +37,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {}.launch(Manifest.permission.POST_NOTIFICATIONS)
-        setContent { AppTheme { App(Settings(this)) } }
+        val s = Settings(this)
+        setContent { AppTheme { App(s) } }
     }
 }
 
@@ -58,40 +55,36 @@ fun AppTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = colors, content = content)
 }
 
-private data class Tab(val title: String, val label: String, val icon: ImageVector)
-
-private val TABS = listOf(
-    Tab("Network Filter", "Home", Icons.Rounded.Shield),
-    Tab("Private DNS", "DNS", Icons.Rounded.Dns),
-    Tab("App access", "Apps", Icons.Rounded.Apps),
-    Tab("Ad blocking", "Ads", Icons.Rounded.Block),
-    Tab("Privacy", "Privacy", Icons.Rounded.VisibilityOff),
-)
+enum class Tab(val title: String, val label: String, val icon: ImageVector) {
+    Home("Network Filter", "Home", Icons.Rounded.Shield),
+    Dns("Private DNS", "DNS", Icons.Rounded.Dns),
+    Apps("App access", "Apps", Icons.Rounded.Apps),
+    Ads("Ad blocking", "Ads", Icons.Rounded.Block),
+    Privacy("Privacy", "Privacy", Icons.Rounded.VisibilityOff),
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun App(s: Settings) {
     val ctx = LocalContext.current
-    var tab by remember { mutableIntStateOf(0) }
+    var tab by remember { mutableStateOf(Tab.Home) }
     var activity by remember { mutableStateOf(false) } // Activity log screen, opened from Home
-    // Bumped on every settings write so screens re-read prefs.
-    var rev by remember { mutableIntStateOf(0) }
-    val change: (() -> Unit) -> Unit = { it(); rev++; FilterVpnService.reconfigure(ctx) }
+    val change: (() -> Unit) -> Unit = { it(); FilterVpnService.reconfigure(ctx) }
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
-    val tabScroll = remember { List(TABS.size) { ScrollState(0) } }
+    val tabState = rememberSaveableStateHolder() // keeps each tab's scroll position across tab switches
     Scaffold(
         Modifier.nestedScroll(scroll.nestedScrollConnection),
         topBar = {
             if (activity) TopAppBar(
                 title = { Text("Activity") },
                 navigationIcon = { IconButton({ activity = false }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
-            ) else LargeTopAppBar(title = { Text(TABS[tab].title) }, scrollBehavior = scroll)
+            ) else LargeTopAppBar(title = { Text(tab.title) }, scrollBehavior = scroll)
         },
         bottomBar = {
             if (!activity) NavigationBar {
-                TABS.forEachIndexed { i, t ->
+                Tab.entries.forEach { t ->
                     NavigationBarItem(
-                        selected = tab == i, onClick = { tab = i },
+                        selected = tab == t, onClick = { tab = t },
                         icon = { Icon(t.icon, null) }, label = { Text(t.label) },
                     )
                 }
@@ -100,67 +93,16 @@ fun App(s: Settings) {
     ) { pad ->
         Box(Modifier.padding(pad).fillMaxSize()) {
             BackHandler(activity) { activity = false }
-            // Apps and Activity stay outside key(rev) so a toggle doesn't reset their lists.
-            if (activity) ActivityScreen(s, change, rev)
-            else if (tab == 2) AppsScreen(s, change, rev)
-            else CompositionLocalProvider(LocalScroll provides tabScroll[tab]) {
-                key(rev) {
-                    when (tab) {
-                        0 -> HomeScreen(s, onActivity = { activity = true }) { tab = it }
-                        1 -> DnsScreen(s, change)
-                        3 -> AdBlockScreen(s, change)
-                        4 -> PrivacyScreen(s, change)
-                    }
+            if (activity) ActivityScreen(s, change)
+            else tabState.SaveableStateProvider(tab) {
+                when (tab) {
+                    Tab.Home -> HomeScreen(s, onActivity = { activity = true }) { tab = it }
+                    Tab.Dns -> DnsScreen(s, change)
+                    Tab.Apps -> AppsScreen(s, change)
+                    Tab.Ads -> AdBlockScreen(s, change)
+                    Tab.Privacy -> PrivacyScreen(s, change)
                 }
             }
-        }
-    }
-}
-
-@Composable
-fun HomeScreen(s: Settings, onActivity: () -> Unit, goTo: (Int) -> Unit) {
-    val act = LocalContext.current as MainActivity
-    var running by remember { mutableStateOf(FilterVpnService.running) }
-    var err by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) { while (true) { running = FilterVpnService.running; err = FilterVpnService.lastError; delay(500) } }
-    val strictPrivateDns = android.provider.Settings.Global.getString(act.contentResolver, "private_dns_mode") == "hostname"
-    val c = MaterialTheme.colorScheme
-    val btnColor by animateColorAsState(if (running) c.primary else c.surfaceContainerHighest)
-    val iconColor by animateColorAsState(if (running) c.onPrimary else c.onSurfaceVariant)
-
-    ScreenColumn {
-        Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Surface(
-                onClick = { if (running) FilterVpnService.stop(act) else act.startVpn() },
-                shape = CircleShape, color = btnColor, modifier = Modifier.size(168.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.PowerSettingsNew, if (running) "Turn off" else "Turn on", Modifier.size(72.dp), tint = iconColor)
-                }
-            }
-            Spacer(Modifier.height(20.dp))
-            Text(if (running) "Protected" else "Not protected", style = MaterialTheme.typography.headlineSmall)
-        }
-        if (err != null) Notice(Icons.Rounded.ErrorOutline, "Couldn't start the filter", err!!)
-        if (strictPrivateDns) Notice(
-            Icons.Rounded.Warning, "Turn off Android's Private DNS",
-            "It's set to a specific provider, which conflicts with this app. Set it to Off or Automatic in system settings.",
-        )
-        val preset = DNS_PRESETS.firstOrNull { it.url == s.dnsUrl() }
-        val tricks = listOf("sniSplit", "tlsFrag", "hostTricks", "blockQuic").count { s.bool(it) }
-        val privacy = listOfNotNull(
-            if (tricks > 0) "Disguise on" else null,
-            when (s.routeMode()) { "wg" -> "via ${s.activeWg()?.name ?: "WireGuard"}"; "proxy" -> "via proxy"; else -> null },
-        ).joinToString(" · ").ifEmpty { "Off" }
-        val lists = s.set("lists").size
-        Group {
-            NavRow(Icons.Rounded.Dns, "Private DNS", preset?.let { "${it.name} · ${dnsKind(it.url)}" } ?: "Custom server") { goTo(1) }
-            NavRow(Icons.Rounded.Apps, "App access", s.set("blocked").size.let { if (it == 0) "All apps allowed" else "$it ${if (it == 1) "app" else "apps"} blocked" }) { goTo(2) }
-            NavRow(Icons.Rounded.Block, "Ad blocking", if (s.bool("adblock")) "On · $lists ${if (lists == 1) "list" else "lists"}" else "Off") { goTo(3) }
-            NavRow(Icons.Rounded.VisibilityOff, "Privacy", privacy) { goTo(4) }
-        }
-        Group {
-            NavRow(Icons.Rounded.History, "Activity", if (s.bool("logOn")) "Recording" else "Off", onActivity)
         }
     }
 }

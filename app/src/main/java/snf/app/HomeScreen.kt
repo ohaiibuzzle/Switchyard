@@ -1,0 +1,60 @@
+package snf.app
+
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+
+@Composable
+fun HomeScreen(s: Settings, onActivity: () -> Unit, goTo: (Tab) -> Unit) {
+    val act = LocalContext.current as MainActivity
+    val running = FilterVpnService.running
+    val starting = FilterVpnService.starting
+    val err = FilterVpnService.lastError
+    val strictPrivateDns = android.provider.Settings.Global.getString(act.contentResolver, "private_dns_mode") == "hostname"
+    val c = MaterialTheme.colorScheme
+    val btnColor by animateColorAsState(if (running) c.primary else c.surfaceContainerHighest)
+    val iconColor by animateColorAsState(if (running) c.onPrimary else c.onSurfaceVariant)
+
+    ScreenColumn {
+        Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Surface(
+                onClick = { if (running || starting) FilterVpnService.stop(act) else act.startVpn() },
+                shape = CircleShape, color = btnColor, modifier = Modifier.size(168.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.PowerSettingsNew, if (running) "Turn off" else "Turn on", Modifier.size(72.dp), tint = iconColor)
+                }
+            }
+            Spacer(Modifier.height(20.dp))
+            Text(if (running) "Protected" else if (starting) "Starting…" else "Not protected", style = MaterialTheme.typography.headlineSmall)
+        }
+        if (err != null) Notice(Icons.Rounded.ErrorOutline, "Couldn't start the filter", err)
+        if (strictPrivateDns) Notice(
+            Icons.Rounded.Warning, "Turn off Android's Private DNS",
+            "It's set to a specific provider, which conflicts with this app. Set it to Off or Automatic in system settings.",
+        )
+        val preset = DNS_PRESETS.firstOrNull { it.url == s.dnsUrl }
+        val privacy = listOfNotNull(
+            if (s.tricksOn() > 0) "Disguise on" else null,
+            when (s.routeMode) { "wg" -> "via ${s.activeWg()?.name ?: "WireGuard"}"; "proxy" -> "via proxy"; else -> null },
+        ).joinToString(" · ").ifEmpty { "Off" }
+        val lists = s.lists.size
+        Group {
+            NavRow(Icons.Rounded.Dns, "Private DNS", preset?.let { "${it.name} · ${dnsKind(it.url)}" } ?: "Custom server") { goTo(Tab.Dns) }
+            NavRow(Icons.Rounded.Apps, "App access", s.blockedUids.size.let { if (it == 0) "All apps allowed" else "$it ${if (it == 1) "app" else "apps"} blocked" }) { goTo(Tab.Apps) }
+            NavRow(Icons.Rounded.Block, "Ad blocking", if (s.adblock) "On · $lists ${if (lists == 1) "list" else "lists"}" else "Off") { goTo(Tab.Ads) }
+            NavRow(Icons.Rounded.VisibilityOff, "Privacy", privacy) { goTo(Tab.Privacy) }
+        }
+        Group {
+            NavRow(Icons.Rounded.History, "Activity", if (s.logOn) "Recording" else "Off", onActivity)
+        }
+    }
+}
