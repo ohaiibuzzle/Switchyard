@@ -19,9 +19,12 @@ type config struct {
 	TLSFrag      bool     `json:"tlsFrag"`
 	HostTricks   bool     `json:"hostTricks"`
 	BlockQUIC    bool     `json:"blockQuic"`
-	ProxyURL     string   `json:"proxyUrl"`  // socks5://[user:pass@]host:port or http://host:port
-	WGConf       string   `json:"wgConf"`    // wg-quick config text; takes precedence over ProxyURL
-	RouteUIDs    []int    `json:"routeUids"` // apps sent via WireGuard/proxy; empty = all apps
+	ProxyURL     string   `json:"proxyUrl"`     // socks5://[user:pass@]host:port or http://host:port
+	WGConf       string   `json:"wgConf"`       // wg-quick config text; takes precedence over ProxyURL
+	RouteUIDs    []int    `json:"routeUids"`    // apps sent via WireGuard/proxy; empty = all apps
+	AllowDomains []string `json:"allowDomains"` // user rules, subdomains included
+	BlockDomains []string `json:"blockDomains"`
+	Log          bool     `json:"log"`
 }
 
 // state is an immutable snapshot swapped atomically on Reconfigure.
@@ -30,6 +33,8 @@ type state struct {
 	blocked   map[int]bool
 	routed    map[int]bool
 	blocklist domainSet
+	allow     domainSet
+	block     domainSet
 	up        upstream.Upstream
 	dial      dialFunc
 	wg        *wgTunnel
@@ -43,6 +48,16 @@ func set(xs []int) map[int]bool {
 	return m
 }
 
+func domains(xs []string) domainSet {
+	d := domainSet{}
+	for _, x := range xs {
+		if x = normName(x); x != "" {
+			d[x] = struct{}{}
+		}
+	}
+	return d
+}
+
 func routed(s *state, uid int) bool { return len(s.routed) == 0 || s.routed[uid] }
 
 // viaWG returns the tunnel if this flow should use it: app selected and dst inside the peer's AllowedIPs.
@@ -53,13 +68,24 @@ func viaWG(s *state, uid int, dst netip.AddrPort) *wgTunnel {
 	return nil
 }
 
+// route names the path a TCP flow takes: wireguard, proxy or direct.
+func route(s *state, uid int, dst netip.AddrPort) string {
+	switch {
+	case viaWG(s, uid, dst) != nil:
+		return "wireguard"
+	case s.cfg.ProxyURL != "" && routed(s, uid):
+		return "proxy"
+	}
+	return "direct"
+}
+
 func upstreamDial(s *state, uid int, dst netip.AddrPort) (net.Conn, error) {
-	if wg := viaWG(s, uid, dst); wg != nil {
+	switch route(s, uid, dst) {
+	case "wireguard":
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		return wg.tnet.DialContextTCPAddrPort(ctx, dst)
-	}
-	if s.cfg.ProxyURL != "" && routed(s, uid) {
+		return s.wg.tnet.DialContextTCPAddrPort(ctx, dst)
+	case "proxy":
 		return s.dial(dst.String())
 	}
 	return directDial(dst.String())

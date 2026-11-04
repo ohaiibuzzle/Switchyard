@@ -10,9 +10,11 @@ import (
 // shortcut: plain map costs ~100B/domain (~30MB for 300k), switch to a succinct trie if memory bites.
 type domainSet map[string]struct{}
 
+func normName(name string) string { return strings.TrimSuffix(strings.ToLower(name), ".") }
+
 // has reports whether name or any parent domain is in the set.
 func (s domainSet) has(name string) bool {
-	name = strings.TrimSuffix(strings.ToLower(name), ".")
+	name = normName(name)
 	for name != "" {
 		if _, ok := s[name]; ok {
 			return true

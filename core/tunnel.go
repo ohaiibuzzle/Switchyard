@@ -77,10 +77,16 @@ func newState(js string) (*state, error) {
 		up.Close()
 		return nil, err
 	}
-	return &state{c, set(c.BlockedUIDs), set(c.RouteUIDs), loadLists(c.Blocklists), up, d, wg}, nil
+	return &state{
+		cfg: c, blocked: set(c.BlockedUIDs), routed: set(c.RouteUIDs), blocklist: loadLists(c.Blocklists),
+		allow: domains(c.AllowDomains), block: domains(c.BlockDomains), up: up, dial: d, wg: wg,
+	}, nil
 }
 
 func swap(s *state) {
+	if s != nil {
+		logOn.Store(s.cfg.Log)
+	}
 	if old := cur.Swap(s); old != nil {
 		old.up.Close()
 	}
@@ -148,6 +154,8 @@ func Stop() {
 	unix.Close(tun) // fdbased doesn't own the fd
 	stk = nil
 	swap(nil)
+	logOn.Store(false)
+	ClearEvents()
 	wgFor("")
 	logf("stopped")
 }
@@ -157,21 +165,28 @@ func addrPort(a tcpip.Address, p uint16) netip.AddrPort {
 	return netip.AddrPortFrom(ip.Unmap(), p)
 }
 
-// verdict returns the owning uid and whether the flow must be dropped.
-func verdict(s *state, proto int, src, dst netip.AddrPort) (int, bool) {
+// verdict returns the owning uid and, if the flow must be dropped, why (else "").
+func verdict(s *state, proto int, src, dst netip.AddrPort) (int, string) {
 	uid := -1
 	if c := cb; c != nil {
 		uid = c.UidFor(proto, src.Addr().String(), int(src.Port()), dst.Addr().String(), int(dst.Port()))
 	}
+	why := ""
 	switch p := dst.Port(); {
 	case s.blocked[uid]:
-	case s.cfg.BlockBypass && p == 853: // DoT / DoQ
-	case s.cfg.BlockBypass && p == 443 && bypassIPs[dst.Addr()]: // DoH by IP
+		why = "app"
+	case s.cfg.BlockBypass && p == 853:
+		why = "dot"
+	case s.cfg.BlockBypass && p == 443 && bypassIPs[dst.Addr()]:
+		why = "doh"
 	case s.cfg.BlockQUIC && proto == unix.IPPROTO_UDP && p == 443:
-	default:
-		return uid, false
+		why = "quic"
 	}
-	return uid, true
+	if why != "" {
+		name := map[int]string{unix.IPPROTO_TCP: "tcp", unix.IPPROTO_UDP: "udp"}[proto]
+		record(event{UID: uid, Proto: name, Dst: dst.String(), Host: hostFor(dst.Addr()), Action: "block", Reason: why})
+	}
+	return uid, why
 }
 
 func onTCP(r *tcp.ForwarderRequest) {
@@ -182,24 +197,29 @@ func onTCP(r *tcp.ForwarderRequest) {
 		r.Complete(true)
 		return
 	}
-	uid, drop := verdict(s, unix.IPPROTO_TCP, src, dst)
-	if drop {
+	uid, why := verdict(s, unix.IPPROTO_TCP, src, dst)
+	if why != "" {
 		r.Complete(true)
 		return
 	}
 	if dst.Port() == 53 {
 		if c := accept(r); c != nil {
-			go serveDNSTCP(c)
+			go serveDNSTCP(c, uid)
 		}
 		return
 	}
 	// Dial before accepting so an unreachable target becomes a clean RST to the app.
+	rt := route(s, uid, dst)
 	out, err := upstreamDial(s, uid, dst)
+	ev := event{UID: uid, Proto: "tcp", Dst: dst.String(), Host: hostFor(dst.Addr()), Action: "allow", Reason: rt}
 	if err != nil {
 		logf("dial %s: %v", dst, err)
+		ev.Action, ev.Reason = "fail", rt+": "+err.Error()
+		record(ev)
 		r.Complete(true)
 		return
 	}
+	record(ev)
 	c := accept(r)
 	if c == nil {
 		out.Close()
@@ -226,8 +246,8 @@ func onUDP(r *udp.ForwarderRequest) bool {
 	if s == nil {
 		return true
 	}
-	uid, drop := verdict(s, unix.IPPROTO_UDP, src, dst)
-	if drop {
+	uid, why := verdict(s, unix.IPPROTO_UDP, src, dst)
+	if why != "" {
 		return true // handled = silently dropped
 	}
 	var wq waiter.Queue
@@ -241,27 +261,37 @@ func onUDP(r *udp.ForwarderRequest) bool {
 }
 
 // resolve answers one DNS query: sinkhole if blocked, else ask the secure upstream.
-func resolve(q []byte) []byte {
+func resolve(q []byte, uid int) []byte {
 	s := cur.Load()
 	m := new(dns.Msg)
 	if s == nil || m.Unpack(q) != nil {
 		return nil
 	}
 	resp := new(dns.Msg)
-	if len(m.Question) == 1 && (s.blocklist.has(m.Question[0].Name) || s.cfg.BlockBypass && bypassDomains.has(m.Question[0].Name)) {
+	why, name := "", ""
+	if len(m.Question) == 1 {
+		name = normName(m.Question[0].Name)
+		why = dnsDecision(s, name)
+	}
+	ev := event{UID: uid, Proto: "dns", Host: name, Action: "allow"}
+	if why != "" {
 		resp.SetRcode(m, dns.RcodeNameError)
+		ev.Action, ev.Reason = "block", why
 	} else if r, err := s.up.Exchange(context.Background(), m); err != nil {
 		logf("dns %v: %v", m.Question, err)
 		resp.SetRcode(m, dns.RcodeServerFailure)
+		ev.Action, ev.Reason = "fail", err.Error()
 	} else {
 		r.Id = m.Id
 		resp = r
+		noteAnswer(r)
 	}
+	record(ev)
 	out, _ := resp.Pack()
 	return out
 }
 
-func serveDNSTCP(c net.Conn) {
+func serveDNSTCP(c net.Conn, uid int) {
 	defer c.Close()
 	dc := &dns.Conn{Conn: c}
 	for {
@@ -270,7 +300,7 @@ func serveDNSTCP(c net.Conn) {
 		if err != nil {
 			return
 		}
-		a := resolve(q)
+		a := resolve(q, uid)
 		if a == nil {
 			return
 		}
@@ -293,7 +323,7 @@ func forwardUDP(s *state, c *gonet.UDPConn, uid int, dst netip.AddrPort) {
 				return
 			}
 			go func(q []byte) {
-				if a := resolve(q); a != nil {
+				if a := resolve(q, uid); a != nil {
 					c.Write(a)
 				}
 			}(append([]byte(nil), buf[:n]...))
@@ -302,14 +332,20 @@ func forwardUDP(s *state, c *gonet.UDPConn, uid int, dst netip.AddrPort) {
 	// shortcut: with a proxy UDP still goes direct (no SOCKS5 UDP ASSOCIATE); WireGuard does carry UDP.
 	var out net.Conn
 	var err error
+	rt := "direct"
 	if wg := viaWG(s, uid, dst); wg != nil {
+		rt = "wireguard"
 		out, err = wg.tnet.DialUDPAddrPort(netip.AddrPort{}, dst)
 	} else {
 		out, err = net.DialUDP("udp", nil, net.UDPAddrFromAddrPort(dst))
 	}
+	ev := event{UID: uid, Proto: "udp", Dst: dst.String(), Host: hostFor(dst.Addr()), Action: "allow", Reason: rt}
 	if err != nil {
+		ev.Action, ev.Reason = "fail", rt+": "+err.Error()
+		record(ev)
 		return
 	}
+	record(ev)
 	defer out.Close()
 	go func() {
 		b := make([]byte, 65535)
