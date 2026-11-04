@@ -10,6 +10,7 @@ What the app does:
 - **Anti-censorship.** Optional tricks: split the TLS ClientHello inside the SNI, fragment the TLS record, mangle the HTTP Host header, block QUIC.
 - **Activity log and your rules.** An optional in-memory log records each decision (app, domain, IP, allow/block, and why). Your own domain allow/block rules can be added straight from a log entry.
 - **Optional upstream.** Traffic can go through a SOCKS5 or HTTP CONNECT proxy (TCP only), or through userspace WireGuard (TCP and UDP). Saved WireGuard profiles can be switched live.
+- **Tailscale.** An embedded tsnet node reaches tailnet IPs (100.64.0.0/10, fd7a:115c:a1e0::/48) for every app. It's a route mode, so it excludes proxy and WireGuard. Optional "Tailscale DNS" asks the tailnet's resolver first and falls back to the chosen provider.
 
 ## Layout
 
@@ -19,6 +20,7 @@ core/                 Go engine, bound to Java with gomobile -> app/libs/core.aa
   routing.go          config JSON -> immutable `state` (newState), per-flow routing, dnsDecision (rule precedence)
   events.go           in-memory activity log (last 2000), IP->domain memory
   wireguard.go        wg-quick parser -> UAPI, wireguard-go on its own netstack, WgHandshakeAge
+  tailscale.go        tsnet node (tsFor), tailnet routing, Tailscale DNS with fallback, TsStatus/TsLogin/TsLogout
   blocklist.go        domainSet: list parsing + suffix lookup
   desync.go           SNI split, TLS record fragmentation, HTTP Host tricks (pure byte functions)
   dialer.go           direct / SOCKS5 / HTTP CONNECT dialers
@@ -29,8 +31,9 @@ app/src/main/java/snf/app/
   Settings.kt         SharedPreferences "snf" -> configJson(); presets; WireGuard profiles; list downloads
   MainActivity.kt     theme (Material You), Tab enum, nav scaffold
   HomeScreen.kt       power button, status notices, summary rows
-  Screens.kt          shared row components + DNS / Apps / Ad-block / Privacy screens
+  Screens.kt          shared row components + DNS (with ad blocking) / Apps / Privacy screens
   WireGuardScreen.kt  WireGuard status, profile list, config editor
+  TailscaleScreen.kt  Tailscale switch, status and sign-in, control URL and auth key
   ActivityScreen.kt   log view (polls Core.events once a second), your rules, per-entry action sheet
 build-core.sh         rebuilds app/libs/core.aar
 ```
@@ -82,6 +85,11 @@ build-core.sh         rebuilds app/libs/core.aar
 - **WireGuard config storage:** configs (which include private keys) live in prefs; `allowBackup="false"` keeps them out of cloud backups. The pre-profiles `wgConf` key is removed on the next profile write.
 - **Blocking DNS providers:** AdGuard DNS (and similar) block ads themselves and answer with `0.0.0.0`. An "allow" rule can't override that; switch provider.
 - **Android Private DNS** set to a specific hostname conflicts with our :853 block, so Home shows a warning.
+- **Tailscale on Android:**
+  - Apps can't call `net.Interfaces`, so `tailscale.go` registers its own getter. Tailscale's `androidbin` fallback skips cgo builds like ours.
+  - There's no `$HOME` or `$TMPDIR`, so `TS_LOGS_DIR` must point at the state dir, or tsnet panics on start.
+  - `envknob.SetNoLogsNoSupport()` stops log uploads to Tailscale. Log buffers still rotate locally under `files/tailscale`.
+  - tsnet can't see Android's DNS servers, so its resolver fails public names unless the tailnet sets global nameservers. That's why Tailscale DNS falls back to the provider.
 - **`VpnService.isAlwaysOn`** is false until our tunnel is established, so read it after `establish()`, not in `onStartCommand`.
 
 ## Conventions

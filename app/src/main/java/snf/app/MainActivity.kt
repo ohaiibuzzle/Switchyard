@@ -57,9 +57,9 @@ fun AppTheme(content: @Composable () -> Unit) {
 
 enum class Tab(val title: String, val label: String, val icon: ImageVector) {
     Home("Network Filter", "Home", Icons.Rounded.Shield),
-    Dns("Private DNS", "DNS", Icons.Rounded.Dns),
+    Dns("DNS and ad blocking", "DNS", Icons.Rounded.Dns),
     Apps("App access", "Apps", Icons.Rounded.Apps),
-    Ads("Ad blocking", "Ads", Icons.Rounded.Block),
+    Tailscale("Tailscale", "Tailscale", Icons.Rounded.Hub),
     Privacy("Privacy", "Privacy", Icons.Rounded.VisibilityOff),
 }
 
@@ -97,7 +97,7 @@ fun App(s: Settings) {
                     Tab.Home -> HomeScreen(s, onActivity = { activity = true }) { tab = it }
                     Tab.Dns -> DnsScreen(s)
                     Tab.Apps -> AppsScreen(s)
-                    Tab.Ads -> AdBlockScreen(s)
+                    Tab.Tailscale -> TailscaleScreen(s)
                     Tab.Privacy -> PrivacyScreen(s)
                 }
             }

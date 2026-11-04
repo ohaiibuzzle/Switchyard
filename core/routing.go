@@ -30,6 +30,10 @@ type config struct {
 	AllowDomains []string `json:"allowDomains"` // user rules, subdomains included
 	BlockDomains []string `json:"blockDomains"`
 	Log          bool     `json:"log"`
+	TSDir        string   `json:"tsDir"`        // Tailscale state dir; empty = off. The app never sends it with WGConf or ProxyURL.
+	TSControlURL string   `json:"tsControlUrl"` // empty = Tailscale's own servers
+	TSAuthKey    string   `json:"tsAuthKey"`
+	TSDNS        bool     `json:"tsDns"` // ask the tailnet first, DNSUpstream for what it can't answer
 }
 
 // cur is the live settings snapshot; nil while the engine is stopped.
@@ -46,6 +50,7 @@ type state struct {
 	up        upstream.Upstream
 	dial      dialFunc
 	wg        *wgTunnel
+	ts        *tsNode
 }
 
 func set(xs []int) map[int]bool {
@@ -76,8 +81,20 @@ func viaWG(s *state, uid int, dst netip.AddrPort) *wgTunnel {
 	return nil
 }
 
-// upstreamDial opens the app's TCP flow and names the path it took: wireguard, proxy or direct.
+// viaTS returns the Tailscale node if dst is on the tailnet (every app may reach it).
+func viaTS(s *state, dst netip.AddrPort) *tsNode {
+	if s.ts != nil && inTailnet(dst.Addr()) {
+		return s.ts
+	}
+	return nil
+}
+
+// upstreamDial opens the app's TCP flow and names the path it took: tailscale, wireguard, proxy or direct.
 func upstreamDial(s *state, uid int, dst netip.AddrPort) (net.Conn, string, error) {
+	if ts := viaTS(s, dst); ts != nil {
+		c, err := ts.dial("tcp", dst)
+		return c, "tailscale", err
+	}
 	if wg := viaWG(s, uid, dst); wg != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -147,8 +164,16 @@ func newState(js string) (*state, error) {
 		up.Close()
 		return nil, err
 	}
+	ts, err := tsFor(c.TSDir, c.TSControlURL, c.TSAuthKey)
+	if err != nil {
+		up.Close()
+		return nil, fmt.Errorf("tailscale: %w", err)
+	}
+	if c.TSDNS && ts != nil {
+		up = tsUpstream{ts.queryDNS, up}
+	}
 	return &state{
 		cfg: c, blocked: set(c.BlockedUIDs), routed: set(c.RouteUIDs), blocklist: loadLists(c.Blocklists),
-		allow: domains(c.AllowDomains), block: domains(c.BlockDomains), up: up, dial: d, wg: wg,
+		allow: domains(c.AllowDomains), block: domains(c.BlockDomains), up: up, dial: d, wg: wg, ts: ts,
 	}, nil
 }

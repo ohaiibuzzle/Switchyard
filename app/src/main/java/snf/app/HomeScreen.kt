@@ -70,9 +70,11 @@ fun HomeScreen(s: Settings, onActivity: () -> Unit, goTo: (Tab) -> Unit) {
         ).joinToString(" · ").ifEmpty { "Off" }
         val lists = s.lists.size
         Group {
-            NavRow(Icons.Rounded.Dns, "Private DNS", preset?.let { "${it.name} · ${dnsKind(it.url)}" } ?: "Custom server") { goTo(Tab.Dns) }
+            val dns = (preset?.let { "${it.name} · ${dnsKind(it.url)}" } ?: "Custom server").let { if (s.routeMode == "ts" && s.tsDns) "Tailscale, then $it" else it }
+            NavRow(Icons.Rounded.Dns, "Private DNS", dns) { goTo(Tab.Dns) }
             NavRow(Icons.Rounded.Apps, "App access", s.blockedUids.size.let { if (it == 0) "All apps allowed" else "$it ${if (it == 1) "app" else "apps"} blocked" }) { goTo(Tab.Apps) }
-            NavRow(Icons.Rounded.Block, "Ad blocking", if (s.adblock) "On · $lists ${if (lists == 1) "list" else "lists"}" else "Off") { goTo(Tab.Ads) }
+            NavRow(Icons.Rounded.Block, "Ad blocking", if (s.adblock) "On · $lists ${if (lists == 1) "list" else "lists"}" else "Off") { goTo(Tab.Dns) }
+            NavRow(Icons.Rounded.Hub, "Tailscale", if (s.routeMode == "ts") "On" else "Off") { goTo(Tab.Tailscale) }
             NavRow(Icons.Rounded.VisibilityOff, "Privacy", privacy) { goTo(Tab.Privacy) }
         }
         Group {

@@ -99,6 +99,9 @@ class Settings private constructor(ctx: Context) {
     var allowDomains by strs("allowDomains")
     var blockDomains by strs("blockDomains")
     var logOn by bool("logOn")
+    var tsControlUrl by str("tsControlUrl")
+    var tsAuthKey by str("tsAuthKey")
+    var tsDns by bool("tsDns")
 
     /** How many traffic-disguise options are on. */
     fun tricksOn() = listOf(sniSplit, tlsFrag, hostTricks, blockQuic).count { it }
@@ -116,7 +119,7 @@ class Settings private constructor(ctx: Context) {
         putStringSet("blockDomains", blockDomains - domain)
     }
 
-    /** "off", "proxy" or "wg". Falls back to the pre-WireGuard proxyOn switch. */
+    /** "off", "proxy", "wg" or "ts" (Tailscale); one at a time. Falls back to the pre-WireGuard proxyOn switch. */
     var routeMode: String
         get() = read { getString("routeMode", null) ?: if (getBoolean("proxyOn", false)) "proxy" else "off" }
         set(v) = write { putString("routeMode", v) }
@@ -166,6 +169,11 @@ class Settings private constructor(ctx: Context) {
         put("allowDomains", JSONArray(allowDomains.toList()))
         put("blockDomains", JSONArray(blockDomains.toList()))
         put("log", logOn)
+        val ts = routeMode == "ts"
+        put("tsDir", if (ts) File(app.filesDir, "tailscale").path else "")
+        put("tsControlUrl", tsControlUrl)
+        put("tsAuthKey", tsAuthKey)
+        put("tsDns", ts && tsDns)
     }.toString()
 
     /** Downloads lists that are missing or older than [maxAgeMs]. Returns per-URL errors. Blocking. */

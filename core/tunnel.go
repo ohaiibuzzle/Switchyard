@@ -111,6 +111,7 @@ func Stop() {
 	swap(nil)
 	ClearEvents()
 	wgFor("")
+	tsFor("", "", "")
 	logf("stopped")
 }
 
@@ -286,7 +287,10 @@ func forwardUDP(s *state, c *gonet.UDPConn, uid int, dst netip.AddrPort) {
 	var out net.Conn
 	var err error
 	rt := "direct"
-	if wg := viaWG(s, uid, dst); wg != nil {
+	if ts := viaTS(s, dst); ts != nil {
+		rt = "tailscale"
+		out, err = ts.dial("udp", dst)
+	} else if wg := viaWG(s, uid, dst); wg != nil {
 		rt = "wireguard"
 		out, err = wg.tnet.DialUDPAddrPort(netip.AddrPort{}, dst)
 	} else {

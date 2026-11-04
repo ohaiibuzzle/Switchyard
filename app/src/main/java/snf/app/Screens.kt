@@ -109,6 +109,11 @@ fun DnsScreen(s: Settings) {
     var url by remember(saved) { mutableStateOf(saved) }
     var boot by remember(saved) { mutableStateOf(s.dnsBootstrap) }
     ScreenColumn {
+        if (s.routeMode == "ts") Group {
+            SwitchRow(Icons.Rounded.Hub, "Use Tailscale DNS", "Your tailnet answers first; the provider below covers the rest", s.tsDns) { v ->
+                s.tsDns = v
+            }
+        }
         Group("Provider") {
             DNS_PRESETS.forEach { p ->
                 ListItem(
@@ -141,6 +146,7 @@ fun DnsScreen(s: Settings) {
                 s.blockBypass = v
             }
         }
+        AdBlockGroups(s)
     }
 }
 
@@ -179,7 +185,7 @@ fun AppsScreen(s: Settings) {
     val blocked = s.blockedUids
     val proxied = s.routedUids
     val mode = s.routeMode
-    val proxyOn = mode != "off"
+    val proxyOn = mode == "proxy" || mode == "wg"
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         OutlinedTextField(
             query, { query = it }, Modifier.fillMaxWidth(),
@@ -220,7 +226,7 @@ fun AppsScreen(s: Settings) {
 }
 
 @Composable
-fun AdBlockScreen(s: Settings) {
+fun ColumnScope.AdBlockGroups(s: Settings) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var newUrl by remember { mutableStateOf("") }
@@ -230,49 +236,45 @@ fun AdBlockScreen(s: Settings) {
     fun updated(url: String) = s.listFile(url).let {
         if (it.exists()) "Updated " + DateUtils.getRelativeTimeSpanString(it.lastModified()) else "Not downloaded yet"
     }
-    ScreenColumn {
-        Group {
-            SwitchRow(Icons.Rounded.Block, "Block ads and trackers", checked = s.adblock) { v ->
-                s.adblock = v
+    Group("Ad blocking") {
+        SwitchRow(Icons.Rounded.Block, "Block ads and trackers", checked = s.adblock) { v ->
+            s.adblock = v
+        }
+        LIST_PRESETS.forEach { p ->
+            SwitchRow(null, p.name, if (p.url in lists) "${p.desc}\n${updated(p.url)}" else p.desc, p.url in lists) {
+                s.lists = s.lists.toggle(p.url)
             }
         }
-        Group("Block lists") {
-            LIST_PRESETS.forEach { p ->
-                SwitchRow(null, p.name, if (p.url in lists) "${p.desc}\n${updated(p.url)}" else p.desc, p.url in lists) {
-                    s.lists = s.lists.toggle(p.url)
-                }
-            }
-            (lists - presetUrls).forEach { url ->
-                ListItem(
-                    headlineContent = { Text(url.substringAfter("://").substringBefore('/')) },
-                    supportingContent = { Text(updated(url)) },
-                    trailingContent = { IconButton({ s.lists = s.lists - url }) { Icon(Icons.Rounded.Delete, "Remove") } },
-                    colors = rowColors,
-                )
-            }
-            Row(Modifier.padding(start = 16.dp, end = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(newUrl, { newUrl = it }, Modifier.weight(1f), placeholder = { Text("Add list by URL") }, singleLine = true)
-                IconButton({ newUrl.trim().takeIf { it.startsWith("http") }?.let { u -> s.lists = s.lists + u; newUrl = "" } }) {
-                    Icon(Icons.Rounded.Add, "Add list")
-                }
+        (lists - presetUrls).forEach { url ->
+            ListItem(
+                headlineContent = { Text(url.substringAfter("://").substringBefore('/')) },
+                supportingContent = { Text(updated(url)) },
+                trailingContent = { IconButton({ s.lists = s.lists - url }) { Icon(Icons.Rounded.Delete, "Remove") } },
+                colors = rowColors,
+            )
+        }
+        Row(Modifier.padding(start = 16.dp, end = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(newUrl, { newUrl = it }, Modifier.weight(1f), placeholder = { Text("Add list by URL") }, singleLine = true)
+            IconButton({ newUrl.trim().takeIf { it.startsWith("http") }?.let { u -> s.lists = s.lists + u; newUrl = "" } }) {
+                Icon(Icons.Rounded.Add, "Add list")
             }
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            FilledTonalButton({
-                refreshStatus = "Updating…"
-                scope.launch {
-                    val errs = withContext(Dispatchers.IO) { s.refreshLists(maxAgeMs = 0) }
-                    refreshStatus = if (errs.isEmpty()) null else "Some lists failed to update:\n" + errs.entries.joinToString("\n") { "${it.key}: ${it.value}" }
-                    FilterVpnService.reconfigure(ctx) // lists changed on disk, not in prefs
-                }
-            }) {
-                Icon(Icons.Rounded.Refresh, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Update lists now")
-            }
-        }
-        refreshStatus?.let { Hint(it) }
     }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        FilledTonalButton({
+            refreshStatus = "Updating…"
+            scope.launch {
+                val errs = withContext(Dispatchers.IO) { s.refreshLists(maxAgeMs = 0) }
+                refreshStatus = if (errs.isEmpty()) null else "Some lists failed to update:\n" + errs.entries.joinToString("\n") { "${it.key}: ${it.value}" }
+                FilterVpnService.reconfigure(ctx) // lists changed on disk, not in prefs
+            }
+        }) {
+            Icon(Icons.Rounded.Refresh, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Update lists now")
+        }
+    }
+    refreshStatus?.let { Hint(it) }
 }
 
 @Composable
@@ -301,6 +303,12 @@ fun RouteGroup(s: Settings) {
     val mode = s.routeMode
     val savedProxy = s.proxyUrl
     var proxy by remember(savedProxy) { mutableStateOf(savedProxy) }
+    if (mode == "ts") {
+        Group("Route traffic") {
+            ListItem(headlineContent = { Text("Through Tailscale") }, supportingContent = { Text("Proxy and WireGuard are off while Tailscale is on") }, colors = rowColors)
+        }
+        return
+    }
     Group("Route traffic") {
         listOf(
             Triple("off", "Directly", null),
