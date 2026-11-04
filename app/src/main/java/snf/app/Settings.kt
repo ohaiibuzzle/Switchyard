@@ -63,7 +63,11 @@ class Settings private constructor(ctx: Context) {
     private var version by mutableIntStateOf(0)
     // Held strongly: SharedPreferences only keeps a weak reference to its listeners.
     // Every write recomposes readers and pushes the new config into a running engine.
-    private val onChange = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> version++; FilterVpnService.reconfigure(app) }
+    private val onChange = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        version++
+        FilterVpnService.reconfigure(app)
+        if (key == "lists" || key == "adblock") FilterVpnService.syncLists(app) // fetch a newly enabled list now, not next hour
+    }
     init {
         // Tailscale used to be routeMode "ts", which paused WireGuard and proxy; it's its own switch now.
         if (prefs.getString("routeMode", null) == "ts") prefs.edit().putBoolean("tsOn", true)
@@ -188,12 +192,17 @@ class Settings private constructor(ctx: Context) {
         put("tsExitNode", if (exit) tsExitNode else "")
     }.toString()
 
-    /** Downloads lists that are missing or older than [maxAgeMs]. Returns per-URL errors. Blocking. */
-    fun refreshLists(maxAgeMs: Long = 24 * 3600_000L): Map<String, String> {
+    /**
+     * Downloads lists that are missing or a day old (all of them if [force]). Returns per-URL errors.
+     * Blocking; call via [FilterVpnService.syncLists]. A download writes "listsAt", so the prefs
+     * listener refreshes the UI and the engine like any other setting.
+     */
+    fun refreshLists(force: Boolean = false): Map<String, String> {
+        var downloaded = false
         val errors = mutableMapOf<String, String>()
         for (url in lists) {
             val f = listFile(url)
-            if (f.exists() && System.currentTimeMillis() - f.lastModified() < maxAgeMs) continue
+            if (!force && f.exists() && System.currentTimeMillis() - f.lastModified() < 24 * 3600_000L) continue
             try {
                 f.parentFile!!.mkdirs()
                 val c = URL(url).openConnection() as HttpURLConnection
@@ -202,10 +211,12 @@ class Settings private constructor(ctx: Context) {
                 val tmp = File(f.path + ".tmp")
                 c.inputStream.use { i -> tmp.outputStream().use { i.copyTo(it) } }
                 tmp.renameTo(f) // atomic swap: a failed download keeps the old list
+                downloaded = true
             } catch (e: Exception) {
                 errors[url] = e.message ?: e.toString()
             }
         }
+        if (downloaded) write { putLong("listsAt", System.currentTimeMillis()) }
         return errors
     }
 }

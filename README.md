@@ -26,6 +26,7 @@ Optional: to have the filter start on its own at boot and come back if it's stop
 
 - **Only one VPN at a time.** Android doesn't allow two, so this can't run next to another VPN app. Use the WireGuard or Tailscale option instead.
 - **Turn off Android's own Private DNS** (or set it to Automatic) if it's set to a specific provider. The app warns you if it is.
+- **Block lists update daily** while the filter runs, or right away with **Update lists now**.
 - **Changes to blocked sites take a few minutes** for apps that already looked up the address.
 - **Some DNS providers block ads themselves** (AdGuard DNS, for example). An "always allow" rule can't undo that; pick a different provider.
 

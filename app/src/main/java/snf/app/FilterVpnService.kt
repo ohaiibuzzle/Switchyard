@@ -18,7 +18,11 @@ import java.net.InetSocketAddress
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import java.util.concurrent.Callable
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 class FilterVpnService : VpnService(), snf.core.Callback {
@@ -36,6 +40,19 @@ class FilterVpnService : VpnService(), snf.core.Callback {
 
         // Every engine start/reconfigure/stop runs here, in order, so a stale config can't win.
         private val engine = Executors.newSingleThreadExecutor()
+        // Every list download runs here, one at a time: never blocks [engine], never races another download's files.
+        private val downloads = Executors.newSingleThreadScheduledExecutor()
+
+        /** Downloads stale lists (all of them if [force]). Yields per-URL errors. */
+        fun syncLists(ctx: Context, force: Boolean = false): Future<Map<String, String>> =
+            downloads.submit(Callable { syncListsNow(ctx.applicationContext, force) })
+
+        /** Only call on [downloads]. */
+        private fun syncListsNow(app: Context, force: Boolean): Map<String, String> {
+            val s = Settings.of(app)
+            if (!s.adblock) return emptyMap()
+            return s.refreshLists(force).onEach { (url, err) -> Log.w("snf", "list $url: $err") }
+        }
 
         fun start(ctx: Context) = ctx.startForegroundService(Intent(ctx, FilterVpnService::class.java))
         fun stop(ctx: Context) = ctx.startService(Intent(ctx, FilterVpnService::class.java).setAction(STOP))
@@ -57,10 +74,10 @@ class FilterVpnService : VpnService(), snf.core.Callback {
     }
 
     private lateinit var cm: ConnectivityManager
+    private var listTimer: ScheduledFuture<*>? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == STOP) {
-            // shortcut: queues behind a running launch(), which may spend a while downloading lists; interrupt it if that bites.
             engine.execute { shutdown() }
             return START_NOT_STICKY
         }
@@ -76,7 +93,6 @@ class FilterVpnService : VpnService(), snf.core.Callback {
     private fun launch() {
         val settings = Settings.of(this)
         try {
-            if (settings.adblock) settings.refreshLists()
             // shortcut: the local network is read once at start, like v6; restart the VPN after a network change.
             val skip = if (settings.skipLan) localNets() else ""
             val b = Builder()
@@ -96,6 +112,9 @@ class FilterVpnService : VpnService(), snf.core.Callback {
             alwaysOn = isAlwaysOn
             running = true
             refreshTile()
+            // Starts on whatever lists are on disk; this fetches missing ones now, then checks hourly
+            // (lists are re-fetched daily, by file age, since the timer's clock stops in deep sleep).
+            listTimer = downloads.scheduleWithFixedDelay({ syncListsNow(applicationContext, force = false) }, 0, 1, TimeUnit.HOURS)
         } catch (e: Exception) {
             lastError = e.message
             Log.e("snf", "start", e)
@@ -125,6 +144,7 @@ class FilterVpnService : VpnService(), snf.core.Callback {
 
     /** Only call on [engine]. */
     private fun shutdown() {
+        listTimer?.cancel(false)
         snf.core.Core.stop()
         running = false
         alwaysOn = false

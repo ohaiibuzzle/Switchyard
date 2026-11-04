@@ -269,9 +269,8 @@ fun AdBlockScreen(s: Settings) = ScreenColumn {
         FilledTonalButton({
             refreshStatus = "Updating…"
             scope.launch {
-                val errs = withContext(Dispatchers.IO) { s.refreshLists(maxAgeMs = 0) }
+                val errs = withContext(Dispatchers.IO) { FilterVpnService.syncLists(ctx, force = true).get() }
                 refreshStatus = if (errs.isEmpty()) null else "Some lists failed to update:\n" + errs.entries.joinToString("\n") { "${it.key}: ${it.value}" }
-                FilterVpnService.reconfigure(ctx) // lists changed on disk, not in prefs
             }
         }) {
             Icon(Icons.Rounded.Refresh, null, Modifier.size(18.dp))

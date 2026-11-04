@@ -75,11 +75,12 @@ build-core.sh         rebuilds app/libs/core.aar
   - It's off unless `log` is set in the config; then `record()` returns after one atomic load.
   - Kotlin polls `Events(afterSeq)`. Sequence numbers never reset within the process, so a VPN restart doesn't confuse the poller. `Stop()` clears the log.
 - **Domain decisions:** `dnsDecision` applies, in order: your allow rule, your block rule, ad lists, the DNS-bypass list. Rules act **only at DNS time**, so apps holding a cached answer keep connecting until the TTL expires.
+- **Block lists:** every download goes through `FilterVpnService.syncLists`, one at a time on its own executor (never `engine`). The engine starts on the lists already on disk; while it runs, an hourly check fetches missing or day-old lists, and enabling a list fetches it right away. A download writes the `listsAt` pref, so the usual prefs listener refreshes the UI and reconfigures; a failed one changes nothing.
 - **WireGuard** handshakes lazily, so `startWG` sends one keepalive per peer to bring it up straight away.
 - **UI state:**
   - `Settings` exposes typed properties (`s.adblock`, `s.blockedUids`, …). Every read touches a Compose state counter that a prefs listener bumps, so composables recompose on any settings change. No manual re-keying.
   - Multi-key writes (`setDns`, `addRule`, `removeRule`, `saveWg`) are one `edit()`.
-  - Screens just write `Settings`. Its prefs listener calls `FilterVpnService.reconfigure`, which merges a burst of writes into one reconfigure. Changes outside prefs (a list download) call it directly.
+  - Screens just write `Settings`. Its prefs listener calls `FilterVpnService.reconfigure`, which merges a burst of writes into one reconfigure. A list download writes `listsAt` so it takes the same path.
   - Engine start, reconfigure and stop all run on one single-thread executor in `FilterVpnService`, so they apply in order. `starting`, `running` and `lastError` are Compose state; the UI reads them directly.
   - Tabs are the `Tab` enum. `rememberSaveableStateHolder` keeps each tab's scroll position. Sub-pages (Activity, Ad blocking, Disguise, Route) are the `Page` enum, opened over a tab with a back arrow.
 
