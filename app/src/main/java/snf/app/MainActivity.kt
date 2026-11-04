@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.AltRoute
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -62,7 +63,7 @@ fun AppTheme(content: @Composable () -> Unit) {
 }
 
 enum class Tab(val title: String, val label: String, val icon: ImageVector) {
-    Home("Switchyard", "Home", Icons.Rounded.AltRoute),
+    Home("Switchyard", "Home", Icons.AutoMirrored.Rounded.AltRoute),
     Dns("DNS", "DNS", Icons.Rounded.Dns),
     Apps("App access", "Apps", Icons.Rounded.Apps),
     Tailscale("Tailscale", "Tailscale", Icons.Rounded.Hub),

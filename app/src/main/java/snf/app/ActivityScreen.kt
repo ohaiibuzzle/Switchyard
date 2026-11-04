@@ -17,6 +17,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 
@@ -88,12 +89,11 @@ fun ActivityScreen(s: Settings) {
     val logOn = s.logOn
     val allow = s.allowDomains.sorted()
     val block = s.blockDomains.sorted()
-    val blockedApps = s.blockedUids
     var blockedOnly by remember { mutableStateOf(true) }
     var appFilter by remember { mutableStateOf<Int?>(null) }
     var selected by remember { mutableStateOf<Ev?>(null) }
     var newRule by remember { mutableStateOf("") }
-    LaunchedEffect(Unit) { while (true) { fetchEvents(); delay(1000) } }
+    LaunchedEffect(Unit) { while (true) { fetchEvents(); delay(1.seconds) } }
 
     val shown = events.asReversed().filter { (!blockedOnly || it.action != "allow") && (appFilter == null || it.uid == appFilter) }
     val timeFmt = remember { DateFormat.getTimeFormat(ctx) }
@@ -181,9 +181,10 @@ fun ActivityScreen(s: Settings) {
                 SheetAction(Icons.Rounded.CheckCircle, "Always allow $h") { s.addRule(true, h); close() }
                 SheetAction(Icons.Rounded.Block, "Always block $h") { s.addRule(false, h); close() }
             }
-            if (app.pkg != null) {
-                SheetAction(Icons.Rounded.Apps, if (e.uid in blockedApps) "Unblock ${app.label}" else "Block ${app.label}") {
-                    s.blockedUids = s.blockedUids.toggle(e.uid); close()
+            app.pkg?.let { pkg ->
+                val blocked = s.access(e.uid, pkg) == Access.Blocked
+                SheetAction(Icons.Rounded.Apps, if (blocked) "Unblock ${app.label}" else "Block ${app.label}") {
+                    s.setAccess(e.uid, pkg, if (blocked) Access.Allowed else Access.Blocked); close()
                 }
             }
             SheetAction(Icons.Rounded.FilterList, "Show only ${app.label}") { appFilter = e.uid; close() }

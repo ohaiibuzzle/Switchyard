@@ -157,7 +157,7 @@ func TestWireGuardLoopback(t *testing.T) {
 		t.Fatal("same config must reuse the running tunnel")
 	}
 
-	s := &state{wg: tun, routed: map[int]bool{}}
+	s := &state{wg: tun, cfg: config{RouteAll: true}}
 	dst := netip.MustParseAddrPort("10.9.0.1:7")
 	if viaWG(s, 1, netip.MustParseAddrPort("1.1.1.1:443")) != nil {
 		t.Fatal("dst outside AllowedIPs must go direct")

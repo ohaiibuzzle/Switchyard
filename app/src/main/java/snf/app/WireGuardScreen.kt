@@ -14,17 +14,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlin.time.Duration.Companion.seconds
 
 @Composable
 fun WgStatus() {
     var age by remember { mutableLongStateOf(-2L) }
     val err = FilterVpnService.lastError
     // Off the main thread: it waits on the tunnel lock, held for seconds while a profile starts.
-    LaunchedEffect(Unit) { while (true) { age = withContext(Dispatchers.IO) { snf.core.Core.wgHandshakeAge() }; delay(1000) } }
+    LaunchedEffect(Unit) { while (true) { age = withContext(Dispatchers.IO) { snf.core.Core.wgHandshakeAge() }; delay(1.seconds) } }
     val (text, ok) = when {
         err != null -> "Couldn't apply: $err" to false
         age == -2L -> "Not connected" to false
@@ -50,11 +52,11 @@ fun WgProfiles(s: Settings) {
     var editOld by remember { mutableStateOf<String?>(null) }
     var deleting by remember { mutableStateOf<String?>(null) }
 
-    if (profiles.isNotEmpty()) Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { WgStatus() }
+    if (profiles.isNotEmpty()) Box(Modifier.padding(16.dp)) { WgStatus() }
     profiles.forEach { p ->
         ListItem(
             headlineContent = { Text(p.name) },
-            supportingContent = { Text(p.endpoint) },
+            supportingContent = { Text(p.endpoint, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             leadingContent = { RadioButton(p.name == active, null) },
             trailingContent = {
                 Row {

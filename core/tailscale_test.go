@@ -32,19 +32,21 @@ func TestViaTSExitNode(t *testing.T) {
 	for _, c := range []struct {
 		name   string
 		exit   bool
+		all    bool
 		routed []int
 		uid    int
 		dst    netip.AddrPort
 		want   string // route name, "" for not through Tailscale
 	}{
-		{"tailnet, no exit node", false, nil, 1, tailnet, "tailscale"},
-		{"internet, no exit node", false, nil, 1, public, ""},
-		{"internet, exit node, all apps", true, nil, 1, public, "exit node"},
-		{"internet, exit node, app picked", true, []int{1}, 1, public, "exit node"},
-		{"internet, exit node, app not picked", true, []int{2}, 1, public, ""},
-		{"tailnet, exit node, app not picked", true, []int{2}, 1, tailnet, "tailscale"}, // the tailnet is for every app
+		{"tailnet, no exit node", false, true, nil, 1, tailnet, "tailscale"},
+		{"internet, no exit node", false, true, nil, 1, public, ""},
+		{"internet, exit node, all apps", true, true, nil, 1, public, "exit node"},
+		{"internet, exit node, none picked", true, false, nil, 1, public, ""},
+		{"internet, exit node, app picked", true, false, []int{1}, 1, public, "exit node"},
+		{"internet, exit node, app not picked", true, false, []int{2}, 1, public, ""},
+		{"tailnet, exit node, app not picked", true, false, []int{2}, 1, tailnet, "tailscale"}, // the tailnet is for every app
 	} {
-		s := &state{ts: node, cfg: config{TSExit: c.exit}, routed: set(c.routed)}
+		s := &state{ts: node, cfg: config{TSExit: c.exit, RouteAll: c.all}, routed: set(c.routed)}
 		ts, got := viaTS(s, c.uid, c.dst)
 		if got != c.want || (ts != nil) != (c.want != "") {
 			t.Errorf("%s: route %q (node %v), want %q", c.name, got, ts != nil, c.want)

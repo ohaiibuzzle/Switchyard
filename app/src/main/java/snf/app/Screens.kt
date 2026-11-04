@@ -14,7 +14,9 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.AltRoute
 import androidx.compose.material.icons.automirrored.rounded.ArrowForwardIos
+import androidx.compose.material.icons.automirrored.rounded.CallSplit
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -142,7 +144,7 @@ fun DnsScreen(s: Settings) {
             }
         }
         Group("Protection") {
-            SwitchRow(Icons.Rounded.GppGood, "Block apps' own DNS", "Encrypted only. Plain DNS always goes through us.", s.blockBypass) { v ->
+            SwitchRow(Icons.Rounded.GppGood, "Block apps' own DNS", "Stops DoH, DoT and DoQ", s.blockBypass) { v ->
                 s.blockBypass = v
             }
         }
@@ -183,11 +185,8 @@ fun AppsScreen(s: Settings) {
                 .sortedBy { it.label.lowercase() }
         }
     }
-    val blocked = s.blockedUids
-    val bypassed = s.bypassPkgs
     val proxied = s.routedUids
-    val mode = s.routeMode
-    val proxyOn = mode != "off"
+    val pickRoutes = s.pickRoutes
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         OutlinedTextField(
             query, { query = it }, Modifier.fillMaxWidth(),
@@ -197,25 +196,20 @@ fun AppsScreen(s: Settings) {
         Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(showSystem, { showSystem = !showSystem }, label = { Text("System apps") })
         }
-        if (proxyOn) {
-            Hint("Globe: route ${routeSummary(s).replaceFirstChar { it.lowercase() }}. None picked = all apps.")
-            Spacer(Modifier.height(8.dp))
-        }
         val list = apps
         if (list == null) Box(Modifier.fillMaxWidth().padding(32.dp), Alignment.Center) { CircularProgressIndicator() }
         else LazyColumn(Modifier.clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))) {
             items(list.filter { (showSystem || !it.system) && (it.label.contains(query, true) || it.pkg.contains(query, true)) }, key = { it.pkg }) { a ->
-                val uid = a.uid
-                val bypass = a.pkg in bypassed
+                val access = s.access(a.uid, a.pkg)
                 ListItem(
                     headlineContent = { Text(a.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    supportingContent = {
-                        Text(if (bypass) "Bypasses Switchyard" else if (uid in blocked) "No internet access" else a.pkg, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    },
+                    supportingContent = { Text(access.status ?: a.pkg, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     leadingContent = { AppIcon(a.pkg) },
                     trailingContent = {
-                        if (proxyOn && !bypass) IconToggleButton(uid in proxied, { s.routedUids = s.routedUids.toggle(uid) }) {
-                            Icon(Icons.Rounded.Public, "Route through tunnel")
+                        when (access) {
+                            Access.Bypass -> Icon(Icons.Rounded.RemoveModerator, access.title)
+                            Access.Blocked -> Icon(Icons.Rounded.Block, access.title, tint = MaterialTheme.colorScheme.error)
+                            Access.Allowed -> if (pickRoutes && a.uid in proxied) Icon(Icons.Rounded.Public, "Routed", tint = MaterialTheme.colorScheme.primary)
                         }
                     },
                     colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
@@ -227,28 +221,26 @@ fun AppsScreen(s: Settings) {
 
     picked?.let { a ->
         val close = { picked = null }
-        val bypass = a.pkg in bypassed
-        val isBlocked = !bypass && a.uid in blocked
-        // Blocked and bypass are exclusive: bypassed traffic never reaches us, so it can't be blocked.
-        fun set(block: Boolean, skip: Boolean) {
-            s.blockedUids = if (block) s.blockedUids + a.uid else s.blockedUids - a.uid
-            s.bypassPkgs = if (skip) s.bypassPkgs + a.pkg else s.bypassPkgs - a.pkg
-            close()
-        }
+        val current = s.access(a.uid, a.pkg)
         ModalBottomSheet(onDismissRequest = close) {
-            ListItem(headlineContent = { Text(a.label) }, supportingContent = { Text(a.pkg) }, leadingContent = { AppIcon(a.pkg) })
+            ListItem(headlineContent = { Text(a.label) }, supportingContent = { Text(a.pkg) }, leadingContent = { AppIcon(a.pkg) }, colors = rowColors)
             HorizontalDivider()
-            listOf(
-                Triple("Allowed", null, !bypass && !isBlocked) to { set(false, false) },
-                Triple("Blocked", "No internet access", isBlocked) to { set(true, false) },
-                Triple("Bypass", "Skips the VPN: no DNS, filtering or log. Restarts the VPN.", bypass) to { set(false, true) },
-            ).forEach { (t, onPick) ->
-                val (title, sub, on) = t
+            Access.entries.forEach { opt ->
                 ListItem(
-                    headlineContent = { Text(title) },
-                    supportingContent = sub?.let { { Text(it) } },
-                    trailingContent = { RadioButton(on, null) },
-                    modifier = Modifier.selectable(on, role = Role.RadioButton, onClick = onPick),
+                    headlineContent = { Text(opt.title) },
+                    supportingContent = opt.sub?.let { { Text(it) } },
+                    trailingContent = { RadioButton(opt == current, null) },
+                    colors = rowColors,
+                    modifier = Modifier.selectable(opt == current, role = Role.RadioButton) { s.setAccess(a.uid, a.pkg, opt); close() },
+                )
+            }
+            if (s.routeMode != "off" && current != Access.Bypass) {
+                HorizontalDivider()
+                val title = "Route ${routeSummary(s).replaceFirstChar { it.lowercase() }}"
+                if (pickRoutes) SwitchRow(Icons.Rounded.Public, title, checked = a.uid in proxied) { s.routedUids = proxied.toggle(a.uid) }
+                else ListItem(
+                    headlineContent = { Text(title) }, supportingContent = { Text("All apps, set in Route traffic") },
+                    leadingContent = { Icon(Icons.Rounded.Public, null) }, colors = rowColors,
                 )
             }
             Spacer(Modifier.height(24.dp))
@@ -271,7 +263,7 @@ fun AdBlockScreen(s: Settings) = ScreenColumn {
     val lists = s.lists
     val presetUrls = LIST_PRESETS.map { it.url }.toSet()
     fun updated(url: String) = s.listFile(url).let {
-        if (it.exists()) "Updated " + DateUtils.getRelativeTimeSpanString(it.lastModified()) else "Not downloaded yet"
+        if (it.exists()) "Updated " + DateUtils.getRelativeTimeSpanString(it.lastModified()) else "Not downloaded"
     }
     Group {
         SwitchRow(Icons.Rounded.Block, "Block ads and trackers", checked = s.adblock) { v ->
@@ -286,13 +278,13 @@ fun AdBlockScreen(s: Settings) = ScreenColumn {
             ListItem(
                 headlineContent = { Text(url.substringAfter("://").substringBefore('/')) },
                 supportingContent = { Text(updated(url)) },
-                trailingContent = { IconButton({ s.lists = s.lists - url }) { Icon(Icons.Rounded.Delete, "Remove") } },
+                trailingContent = { IconButton({ s.lists -= url }) { Icon(Icons.Rounded.Delete, "Remove") } },
                 colors = rowColors,
             )
         }
         Row(Modifier.padding(start = 16.dp, end = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(newUrl, { newUrl = it }, Modifier.weight(1f), placeholder = { Text("Add list by URL") }, singleLine = true)
-            IconButton({ newUrl.trim().takeIf { it.startsWith("http") }?.let { u -> s.lists = s.lists + u; newUrl = "" } }) {
+            IconButton({ newUrl.trim().takeIf { it.startsWith("http") }?.let { u -> s.lists += u; newUrl = "" } }) {
                 Icon(Icons.Rounded.Add, "Add list")
             }
         }
@@ -319,10 +311,10 @@ fun PrivacyScreen(s: Settings, open: (Page) -> Unit) {
         Group {
             NavRow(Icons.Rounded.Block, "Ad blocking", adBlockSummary(s)) { open(Page.AdBlock) }
             NavRow(Icons.Rounded.Lock, "Disguise traffic", s.tricksOn().let { if (it == 0) "Off" else "$it on" }) { open(Page.Disguise) }
-            NavRow(Icons.Rounded.AltRoute, "Route traffic", routeSummary(s)) { open(Page.Route) }
+            NavRow(Icons.AutoMirrored.Rounded.AltRoute, "Route traffic", routeSummary(s)) { open(Page.Route) }
         }
         Group {
-            SwitchRow(Icons.Rounded.Router, "Skip local network", "Casting and sharing bypass the filter. Applies on restart.", s.skipLan) { v ->
+            SwitchRow(Icons.Rounded.Router, "Bypass local network", "LAN skips the tunnel. Applies on restart.", s.skipLan) { v ->
                 s.skipLan = v
             }
         }
@@ -336,7 +328,7 @@ fun DisguiseScreen(s: Settings) {
             SwitchRow(Icons.Rounded.Lock, "Hide site names in secure connections", checked = s.sniSplit) { v ->
                 s.sniSplit = v
             }
-            SwitchRow(Icons.Rounded.CallSplit, "Fragment secure handshakes", checked = s.tlsFrag) { v ->
+            SwitchRow(Icons.AutoMirrored.Rounded.CallSplit, "Fragment secure handshakes", checked = s.tlsFrag) { v ->
                 s.tlsFrag = v
             }
             SwitchRow(Icons.Rounded.Http, "Disguise unencrypted requests", checked = s.hostTricks) { v ->
@@ -369,13 +361,20 @@ fun RouteGroup(s: Settings) {
                 modifier = Modifier.selectable(mode == key, enabled, Role.RadioButton) { s.routeMode = key },
             )
         }
-        if (mode == "proxy") Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(proxy, { proxy = it }, Modifier.fillMaxWidth(), label = { Text("Proxy address") },
-                placeholder = { Text("socks5://host:port or http://host:port") }, singleLine = true)
-            FilledTonalButton({ s.proxyUrl = proxy.trim() }) { Text("Save") }
+    }
+    if (mode != "off") Group {
+        SwitchRow(Icons.Rounded.Apps, "Route all apps", if (s.routeAll) null else "Choose apps in the Apps tab", s.routeAll) { s.routeAll = it }
+    }
+    when (mode) {
+        "proxy" -> Group("Proxy") {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(proxy, { proxy = it }, Modifier.fillMaxWidth(), label = { Text("Proxy address") },
+                    placeholder = { Text("socks5://host:port or http://host:port") }, singleLine = true)
+                FilledTonalButton({ s.proxyUrl = proxy.trim() }) { Text("Save") }
+            }
         }
-        if (mode == "wg") WgProfiles(s)
-        if (mode == "exit") ExitNodes(s)
+        "wg" -> Group("WireGuard configs") { WgProfiles(s) }
+        "exit" -> Group("Exit node") { ExitNodes(s) }
     }
     if (mode == "wg" || mode == "exit") Hint("DNS doesn't go through the tunnel.")
 }
@@ -383,7 +382,7 @@ fun RouteGroup(s: Settings) {
 @Composable
 private fun ExitNodes(s: Settings) {
     val nodes = rememberTsPeers().filter { it.exit }
-    if (nodes.isEmpty()) ListItem(headlineContent = { Text("No exit nodes on your tailnet yet") }, colors = rowColors)
+    if (nodes.isEmpty()) ListItem(headlineContent = { Text("No exit nodes available on your tailnet") }, colors = rowColors)
     nodes.forEach { p ->
         ListItem(
             headlineContent = { Text(p.name) },

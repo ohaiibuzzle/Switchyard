@@ -26,7 +26,8 @@ type config struct {
 	BlockQUIC    bool     `json:"blockQuic"`
 	ProxyURL     string   `json:"proxyUrl"`     // socks5://[user:pass@]host:port or http://host:port
 	WGConf       string   `json:"wgConf"`       // wg-quick config text; takes precedence over ProxyURL
-	RouteUIDs    []int    `json:"routeUids"`    // apps sent via WireGuard/proxy; empty = all apps
+	RouteAll     bool     `json:"routeAll"`     // every app goes via WireGuard/proxy/exit node; else only RouteUIDs
+	RouteUIDs    []int    `json:"routeUids"`
 	AllowDomains []string `json:"allowDomains"` // user rules, subdomains included
 	BlockDomains []string `json:"blockDomains"`
 	Log          bool     `json:"log"`
@@ -74,7 +75,7 @@ func domains(xs []string) domainSet {
 	return d
 }
 
-func routed(s *state, uid int) bool { return len(s.routed) == 0 || s.routed[uid] }
+func routed(s *state, uid int) bool { return s.cfg.RouteAll || s.routed[uid] }
 
 // viaWG returns the tunnel if this flow should use it: app selected and dst inside the peer's AllowedIPs.
 func viaWG(s *state, uid int, dst netip.AddrPort) *wgTunnel {

@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.edit
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -47,6 +48,13 @@ val LIST_PRESETS = listOf(
 /** Flips [x] in or out of the set. */
 fun <T> Set<T>.toggle(x: T) = if (x in this) this - x else this + x
 
+/** What an app may do. `status` replaces the package name in the app list. */
+enum class Access(val title: String, val sub: String?, val status: String?) {
+    Allowed("Allowed", null, null),
+    Blocked("Blocked", "No network access", "No network access"),
+    Bypass("Bypass", "Skips filtering. Restarts the VPN.", "Bypasses Switchyard"),
+}
+
 /**
  * All settings live in one SharedPreferences file; [configJson] turns them into the core's config.
  * Reads go through [read], so composables that read a setting recompose when any setting changes.
@@ -73,6 +81,8 @@ class Settings private constructor(ctx: Context) {
         // Tailscale used to be routeMode "ts", which paused WireGuard and proxy; it's its own switch now.
         if (prefs.getString("routeMode", null) == "ts") prefs.edit().putBoolean("tsOn", true)
             .putString("routeMode", prefs.getString("routeBeforeTs", "off")).remove("routeBeforeTs").apply()
+        // An empty pick list used to mean every app; now that's its own switch.
+        if (!prefs.contains("routeAll")) prefs.edit { putBoolean("routeAll", prefs.getStringSet("proxied", null).isNullOrEmpty()) }
         prefs.registerOnSharedPreferenceChangeListener(onChange)
     }
 
@@ -97,7 +107,8 @@ class Settings private constructor(ctx: Context) {
     var dnsBootstrap by str("dnsBootstrap", DNS_PRESETS[0].bootstrap)
     var blockBypass by bool("blockBypass", true)
     var blockedUids by uids("blocked")
-    var routedUids by uids("proxied") // apps sent via WireGuard/proxy; empty = all
+    var routedUids by uids("proxied") // apps sent via WireGuard/proxy when routeAll is off
+    var routeAll by bool("routeAll", true)
     var bypassPkgs by strs("bypass") // packages kept out of the tun entirely; packages, since that's what Builder takes
     var adblock by bool("adblock")
     var lists by strs("lists")
@@ -119,6 +130,21 @@ class Settings private constructor(ctx: Context) {
 
     /** How many traffic-disguise options are on. */
     fun tricksOn() = listOf(sniSplit, tlsFrag, hostTricks, blockQuic).count { it }
+
+    /** True when apps are routed one by one, so each app has its own switch. */
+    val pickRoutes get() = routeMode != "off" && !routeAll
+
+    fun access(uid: Int, pkg: String) = when {
+        pkg in bypassPkgs -> Access.Bypass
+        uid in blockedUids -> Access.Blocked
+        else -> Access.Allowed
+    }
+
+    /** Blocked and bypass are exclusive: bypassed traffic never reaches us, so it can't be blocked. */
+    fun setAccess(uid: Int, pkg: String, a: Access) = write {
+        putStringSet("blocked", (if (a == Access.Blocked) blockedUids + uid else blockedUids - uid).map(Int::toString).toSet())
+        putStringSet("bypass", if (a == Access.Bypass) bypassPkgs + pkg else bypassPkgs - pkg)
+    }
 
     fun setDns(url: String, bootstrap: String) = write { putString("dnsUrl", url); putString("dnsBootstrap", bootstrap) }
 
@@ -179,6 +205,7 @@ class Settings private constructor(ctx: Context) {
         put("blockQuic", blockQuic)
         put("proxyUrl", if (routeMode == "proxy") proxyUrl else "")
         put("wgConf", if (routeMode == "wg") activeWg()?.conf.orEmpty() else "")
+        put("routeAll", routeAll)
         put("routeUids", JSONArray(routedUids.toList()))
         put("allowDomains", JSONArray(allowDomains.toList()))
         put("blockDomains", JSONArray(blockDomains.toList()))
