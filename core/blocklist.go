@@ -52,7 +52,7 @@ func (s domainSet) parseList(r io.Reader) {
 			d = d[2 : len(d)-1]
 		}
 		d = strings.TrimPrefix(strings.TrimPrefix(d, "*."), ".")
-		d = strings.TrimSuffix(strings.ToLower(d), ".")
+		d = normName(d)
 		if d == "" || !strings.Contains(d, ".") || strings.ContainsAny(d, "/*$@|^:") {
 			continue // also skips localhost, IPv6 and broadcast entries
 		}

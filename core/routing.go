@@ -2,8 +2,13 @@ package core
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
@@ -26,6 +31,9 @@ type config struct {
 	BlockDomains []string `json:"blockDomains"`
 	Log          bool     `json:"log"`
 }
+
+// cur is the live settings snapshot; nil while the engine is stopped.
+var cur atomic.Pointer[state]
 
 // state is an immutable snapshot swapped atomically on Reconfigure.
 type state struct {
@@ -68,25 +76,79 @@ func viaWG(s *state, uid int, dst netip.AddrPort) *wgTunnel {
 	return nil
 }
 
-// route names the path a TCP flow takes: wireguard, proxy or direct.
-func route(s *state, uid int, dst netip.AddrPort) string {
-	switch {
-	case viaWG(s, uid, dst) != nil:
-		return "wireguard"
-	case s.cfg.ProxyURL != "" && routed(s, uid):
-		return "proxy"
-	}
-	return "direct"
-}
-
-func upstreamDial(s *state, uid int, dst netip.AddrPort) (net.Conn, error) {
-	switch route(s, uid, dst) {
-	case "wireguard":
+// upstreamDial opens the app's TCP flow and names the path it took: wireguard, proxy or direct.
+func upstreamDial(s *state, uid int, dst netip.AddrPort) (net.Conn, string, error) {
+	if wg := viaWG(s, uid, dst); wg != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		return s.wg.tnet.DialContextTCPAddrPort(ctx, dst)
-	case "proxy":
-		return s.dial(dst.String())
+		c, err := wg.tnet.DialContextTCPAddrPort(ctx, dst)
+		return c, "wireguard", err
 	}
-	return directDial(dst.String())
+	if s.cfg.ProxyURL != "" && routed(s, uid) {
+		c, err := s.dial(dst.String())
+		return c, "proxy", err
+	}
+	c, err := directDial(dst.String())
+	return c, "direct", err
+}
+
+// dnsDecision returns why a name is blocked, or "" to resolve it.
+// The user's allow rules beat every list; their block rules join them.
+func dnsDecision(s *state, name string) string {
+	switch {
+	case s.allow.has(name):
+		return ""
+	case s.block.has(name):
+		return "rule"
+	case s.blocklist.has(name):
+		return "adblock"
+	case s.cfg.BlockBypass && bypassDomains.has(name):
+		return "bypass"
+	}
+	return ""
+}
+
+func newState(js string) (*state, error) {
+	var c config
+	dec := json.NewDecoder(strings.NewReader(js))
+	dec.DisallowUnknownFields() // a key the app and engine disagree on is a bug, not a no-op
+	if err := dec.Decode(&c); err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
+	opts := &upstream.Options{Timeout: 5 * time.Second, Logger: slog.New(slog.DiscardHandler)}
+	if len(c.DNSBootstrap) > 0 {
+		var ips upstream.StaticResolver
+		for _, s := range c.DNSBootstrap {
+			ip, err := netip.ParseAddr(s)
+			if err != nil {
+				return nil, fmt.Errorf("bootstrap %q: %w", s, err)
+			}
+			ips = append(ips, ip)
+		}
+		opts.Bootstrap = ips
+	} else {
+		r, err := upstream.NewUpstreamResolver("9.9.9.9:53", opts)
+		if err != nil {
+			return nil, err
+		}
+		opts.Bootstrap = r
+	}
+	up, err := upstream.AddressToUpstream(c.DNSUpstream, opts)
+	if err != nil {
+		return nil, fmt.Errorf("upstream %q: %w", c.DNSUpstream, err)
+	}
+	d, err := newDialer(c.ProxyURL)
+	if err != nil {
+		up.Close()
+		return nil, err
+	}
+	wg, err := wgFor(c.WGConf) // last, so a failure above doesn't tear down a working tunnel
+	if err != nil {
+		up.Close()
+		return nil, err
+	}
+	return &state{
+		cfg: c, blocked: set(c.BlockedUIDs), routed: set(c.RouteUIDs), blocklist: loadLists(c.Blocklists),
+		allow: domains(c.AllowDomains), block: domains(c.BlockDomains), up: up, dial: d, wg: wg,
+	}, nil
 }

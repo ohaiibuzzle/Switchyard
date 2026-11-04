@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"errors"
 	"net"
 	"net/netip"
 	"testing"
@@ -31,20 +32,39 @@ func TestDNSDecision(t *testing.T) {
 	}
 }
 
+func TestConfigRejectsUnknownKeys(t *testing.T) {
+	if _, err := newState(`{"dnsUpstream":"tls://1.1.1.1","blockedUid":[1]}`); err == nil {
+		t.Fatal("a misspelled key must fail instead of being ignored")
+	}
+}
+
+func TestLogFlow(t *testing.T) {
+	defer func() { cur.Store(nil); ClearEvents() }()
+	cur.Store(&state{cfg: config{Log: true}})
+	dst := netip.MustParseAddrPort("10.0.0.1:443")
+	logFlow(7, "tcp", dst, "allow", "proxy", nil)
+	logFlow(7, "tcp", dst, "allow", "proxy", errors.New("refused"))
+	var got []event
+	json.Unmarshal([]byte(Events(0)), &got)
+	if len(got) != 2 || got[0].Action != "allow" || got[1].Action != "fail" || got[1].Reason != "proxy" || got[1].Err != "refused" {
+		t.Fatalf("%+v", got)
+	}
+}
+
 func TestEventLog(t *testing.T) {
-	defer func() { logOn.Store(false); ClearEvents() }()
+	defer func() { cur.Store(nil); ClearEvents() }()
 	ClearEvents()
 	record(event{Action: "allow"})
 	if Events(0) != "[]" {
 		t.Fatal("must not record while logging is off")
 	}
-	logOn.Store(true)
-	for i := 0; i < maxEvents+5; i++ {
+	cur.Store(&state{cfg: config{Log: true}})
+	for i := 0; i < 2*maxEvents+5; i++ { // crosses the bulk trim
 		record(event{UID: i, Action: "allow"})
 	}
 	var all []event
 	json.Unmarshal([]byte(Events(0)), &all)
-	if len(all) != maxEvents || all[0].UID != 5 {
+	if len(all) != maxEvents || all[0].UID != maxEvents+5 {
 		t.Fatalf("ring: len %d first uid %d", len(all), all[0].UID)
 	}
 	var tail []event

@@ -6,18 +6,14 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/netip"
 	"sync"
-	"sync/atomic"
 	"time"
 
-	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/miekg/dns"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -37,56 +33,9 @@ var (
 	mu  sync.Mutex
 	stk *stack.Stack
 	tun int
-	cur atomic.Pointer[state]
 )
 
-func newState(js string) (*state, error) {
-	var c config
-	if err := json.Unmarshal([]byte(js), &c); err != nil {
-		return nil, err
-	}
-	opts := &upstream.Options{Timeout: 5 * time.Second, Logger: slog.New(slog.DiscardHandler)}
-	if len(c.DNSBootstrap) > 0 {
-		var ips upstream.StaticResolver
-		for _, s := range c.DNSBootstrap {
-			ip, err := netip.ParseAddr(s)
-			if err != nil {
-				return nil, fmt.Errorf("bootstrap %q: %w", s, err)
-			}
-			ips = append(ips, ip)
-		}
-		opts.Bootstrap = ips
-	} else {
-		r, err := upstream.NewUpstreamResolver("9.9.9.9:53", opts)
-		if err != nil {
-			return nil, err
-		}
-		opts.Bootstrap = r
-	}
-	up, err := upstream.AddressToUpstream(c.DNSUpstream, opts)
-	if err != nil {
-		return nil, fmt.Errorf("upstream %q: %w", c.DNSUpstream, err)
-	}
-	d, err := newDialer(c.ProxyURL)
-	if err != nil {
-		up.Close()
-		return nil, err
-	}
-	wg, err := wgFor(c.WGConf) // last, so a failure above doesn't tear down a working tunnel
-	if err != nil {
-		up.Close()
-		return nil, err
-	}
-	return &state{
-		cfg: c, blocked: set(c.BlockedUIDs), routed: set(c.RouteUIDs), blocklist: loadLists(c.Blocklists),
-		allow: domains(c.AllowDomains), block: domains(c.BlockDomains), up: up, dial: d, wg: wg,
-	}, nil
-}
-
 func swap(s *state) {
-	if s != nil {
-		logOn.Store(s.cfg.Log)
-	}
 	if old := cur.Swap(s); old != nil {
 		old.up.Close()
 	}
@@ -154,7 +103,6 @@ func Stop() {
 	unix.Close(tun) // fdbased doesn't own the fd
 	stk = nil
 	swap(nil)
-	logOn.Store(false)
 	ClearEvents()
 	wgFor("")
 	logf("stopped")
@@ -166,7 +114,7 @@ func addrPort(a tcpip.Address, p uint16) netip.AddrPort {
 }
 
 // verdict returns the owning uid and, if the flow must be dropped, why (else "").
-func verdict(s *state, proto int, src, dst netip.AddrPort) (int, string) {
+func verdict(s *state, proto int, name string, src, dst netip.AddrPort) (int, string) {
 	uid := -1
 	if c := cb; c != nil {
 		uid = c.UidFor(proto, src.Addr().String(), int(src.Port()), dst.Addr().String(), int(dst.Port()))
@@ -183,8 +131,7 @@ func verdict(s *state, proto int, src, dst netip.AddrPort) (int, string) {
 		why = "quic"
 	}
 	if why != "" {
-		name := map[int]string{unix.IPPROTO_TCP: "tcp", unix.IPPROTO_UDP: "udp"}[proto]
-		record(event{UID: uid, Proto: name, Dst: dst.String(), Host: hostFor(dst.Addr()), Action: "block", Reason: why})
+		logFlow(uid, name, dst, "block", why, nil)
 	}
 	return uid, why
 }
@@ -197,7 +144,7 @@ func onTCP(r *tcp.ForwarderRequest) {
 		r.Complete(true)
 		return
 	}
-	uid, why := verdict(s, unix.IPPROTO_TCP, src, dst)
+	uid, why := verdict(s, unix.IPPROTO_TCP, "tcp", src, dst)
 	if why != "" {
 		r.Complete(true)
 		return
@@ -209,17 +156,13 @@ func onTCP(r *tcp.ForwarderRequest) {
 		return
 	}
 	// Dial before accepting so an unreachable target becomes a clean RST to the app.
-	rt := route(s, uid, dst)
-	out, err := upstreamDial(s, uid, dst)
-	ev := event{UID: uid, Proto: "tcp", Dst: dst.String(), Host: hostFor(dst.Addr()), Action: "allow", Reason: rt}
+	out, rt, err := upstreamDial(s, uid, dst)
+	logFlow(uid, "tcp", dst, "allow", rt, err)
 	if err != nil {
 		logf("dial %s: %v", dst, err)
-		ev.Action, ev.Reason = "fail", rt+": "+err.Error()
-		record(ev)
 		r.Complete(true)
 		return
 	}
-	record(ev)
 	c := accept(r)
 	if c == nil {
 		out.Close()
@@ -246,7 +189,7 @@ func onUDP(r *udp.ForwarderRequest) bool {
 	if s == nil {
 		return true
 	}
-	uid, why := verdict(s, unix.IPPROTO_UDP, src, dst)
+	uid, why := verdict(s, unix.IPPROTO_UDP, "udp", src, dst)
 	if why != "" {
 		return true // handled = silently dropped
 	}
@@ -280,7 +223,7 @@ func resolve(q []byte, uid int) []byte {
 	} else if r, err := s.up.Exchange(context.Background(), m); err != nil {
 		logf("dns %v: %v", m.Question, err)
 		resp.SetRcode(m, dns.RcodeServerFailure)
-		ev.Action, ev.Reason = "fail", err.Error()
+		ev.Action, ev.Err = "fail", err.Error()
 	} else {
 		r.Id = m.Id
 		resp = r
@@ -339,13 +282,10 @@ func forwardUDP(s *state, c *gonet.UDPConn, uid int, dst netip.AddrPort) {
 	} else {
 		out, err = net.DialUDP("udp", nil, net.UDPAddrFromAddrPort(dst))
 	}
-	ev := event{UID: uid, Proto: "udp", Dst: dst.String(), Host: hostFor(dst.Addr()), Action: "allow", Reason: rt}
+	logFlow(uid, "udp", dst, "allow", rt, err)
 	if err != nil {
-		ev.Action, ev.Reason = "fail", rt+": "+err.Error()
-		record(ev)
 		return
 	}
-	record(ev)
 	defer out.Close()
 	go func() {
 		b := make([]byte, 65535)

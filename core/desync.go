@@ -50,11 +50,6 @@ func sniOffset(b []byte) (off, n int, ok bool) {
 	return
 }
 
-// isClientHelloStart reports whether b begins a TLS handshake record holding a ClientHello.
-func isClientHelloStart(b []byte) bool {
-	return len(b) >= 6 && b[0] == 0x16 && b[1] == 0x03 && b[5] == 0x01
-}
-
 // recordLen is the full length of the first TLS record, header included.
 func recordLen(b []byte) int {
 	return 5 + int(binary.BigEndian.Uint16(b[3:5]))

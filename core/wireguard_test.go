@@ -162,9 +162,9 @@ func TestWireGuardLoopback(t *testing.T) {
 	if viaWG(s, 1, netip.MustParseAddrPort("1.1.1.1:443")) != nil {
 		t.Fatal("dst outside AllowedIPs must go direct")
 	}
-	c, err := upstreamDial(s, 1, dst)
-	if err != nil {
-		t.Fatal(err)
+	c, rt, err := upstreamDial(s, 1, dst)
+	if err != nil || rt != "wireguard" {
+		t.Fatal(rt, err)
 	}
 	defer c.Close()
 	c.Write([]byte("over wireguard"))
