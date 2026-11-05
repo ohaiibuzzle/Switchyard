@@ -22,6 +22,7 @@ import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffo
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffoldDefaults
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,8 +77,8 @@ enum class Page(val title: String) { Activity("Activity"), AdBlock("Ad blocking"
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun App(s: Settings) {
-    var tab by remember { mutableStateOf(Tab.Home) }
-    var page by remember { mutableStateOf<Page?>(null) }
+    var tab by rememberSaveable { mutableStateOf(Tab.Home) }
+    var page by rememberSaveable { mutableStateOf<Page?>(null) }
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     val tabState = rememberSaveableStateHolder() // keeps each tab's scroll position across tab switches
     val open = { p: Page -> page = p }
