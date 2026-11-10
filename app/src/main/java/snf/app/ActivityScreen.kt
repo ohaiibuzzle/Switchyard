@@ -151,10 +151,10 @@ fun ActivityScreen(s: Settings) {
                 },
             )
             HorizontalDivider()
-            e.host?.let { parseRule(it, allow = true) }?.let { DomainRule(s, it) } // null when the "host" is an IP
-            e.ip?.let { parseRule(it, allow = false) }?.let { ip ->
-                if (ip in s.blockRules) SheetAction(Icons.Rounded.CheckCircle, "Unblock $ip") { s.removeRule(ip); close() }
-                else SheetAction(Icons.Rounded.Block, "Always block $ip") { s.addRule(false, ip); close() }
+            e.host?.let(::domainRule)?.let { DomainRule(s, it) } // null when the "host" is an IP
+            e.ip?.let(::ipRule)?.let { ip ->
+                if (ip in s.blockRules) SheetAction(Icons.Rounded.CheckCircle, "Unblock $ip") { s.setRule(ip, Rule.Default); close() }
+                else SheetAction(Icons.Rounded.Block, "Always block $ip") { s.setRule(ip, Rule.Block); close() }
             }
             app.pkg?.let { pkg ->
                 val blocked = s.access(e.uid, pkg) == Access.Blocked
@@ -168,22 +168,17 @@ fun ActivityScreen(s: Settings) {
     }
 }
 
-/** Block / Default / Allow for [h]. Mirrors core's dnsDecision: an allow rule on [h] or any parent beats any block rule. */
+/** Block / Default / Allow for domain [h], naming the parent's rule when that's what decides it. */
 @Composable
 private fun DomainRule(s: Settings, h: String) {
-    val chain = generateSequence(h) { it.substringAfter('.', "").ifEmpty { null } }
-    val allowBy = chain.firstOrNull { it in s.allowDomains }
-    val blockBy = chain.firstOrNull { it in s.blockRules }
-    val selected = if (allowBy != null) 2 else if (blockBy != null) 0 else 1
+    val (current, by) = s.rule(h)
     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-        (allowBy ?: blockBy)?.takeIf { it != h }?.let { by ->
-            Text("${if (allowBy != null) "Allowed" else "Blocked"} by rule for $by", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        by?.takeIf { it != h }?.let {
+            Text("${if (current == Rule.Allow) "Allowed" else "Blocked"} by rule for $it", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(top = 4.dp)) {
-            listOf("Block", "Default", "Allow").forEachIndexed { i, label ->
-                SegmentedButton(selected == i, {
-                    when (i) { 0 -> s.addRule(false, h); 1 -> s.removeRule(h); else -> s.addRule(true, h) }
-                }, SegmentedButtonDefaults.itemShape(i, 3)) { Text(label) }
+            Rule.entries.forEachIndexed { i, r ->
+                SegmentedButton(r == current, { s.setRule(h, r) }, SegmentedButtonDefaults.itemShape(i, Rule.entries.size)) { Text(r.name) }
             }
         }
     }

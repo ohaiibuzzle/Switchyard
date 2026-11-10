@@ -55,6 +55,18 @@ enum class Access(val title: String, val sub: String?) {
     Bypass("Bypass", "Skips filtering. Restarts the VPN."),
 }
 
+/** A custom rule's effect on a domain or IP. Default: no rule, the lists decide. */
+enum class Rule { Block, Default, Allow }
+
+// Prefs keys written in more than one place.
+private const val BLOCKED = "blocked"
+private const val BYPASS = "bypass"
+private const val SKIP_LAN = "skipLan"
+private const val ALLOW_RULES = "allowDomains"
+private const val BLOCK_RULES = "blockDomains" // also IPs and CIDR ranges now; the key predates them
+// Read only when the tun is built, so changing them rebuilds it.
+private val RESTART_KEYS = setOf(BYPASS, SKIP_LAN)
+
 /**
  * All settings live in one SharedPreferences file; [configJson] turns them into the core's config.
  * Reads go through [read], so composables that read a setting recompose when any setting changes.
@@ -73,8 +85,7 @@ class Settings private constructor(ctx: Context) {
     // Every write recomposes readers and pushes the new config into a running engine.
     private val onChange = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         version++
-        // The excluded-app list is only read when the tun is built, so that needs a restart.
-        if (key == "bypass") FilterVpnService.restart(app) else FilterVpnService.reconfigure(app)
+        if (key in RESTART_KEYS) FilterVpnService.restart(app) else FilterVpnService.reconfigure(app)
         if (key == "lists" || key == "adblock") FilterVpnService.syncLists(app) // fetch a newly enabled list now, not next hour
     }
     init {
@@ -107,10 +118,10 @@ class Settings private constructor(ctx: Context) {
     var dnsUrl by str("dnsUrl", DNS_PRESETS[0].url)
     var dnsBootstrap by str("dnsBootstrap", DNS_PRESETS[0].bootstrap)
     var blockBypass by bool("blockBypass", true)
-    var blockedUids by uids("blocked"); private set // write through setAccess
+    var blockedUids by uids(BLOCKED); private set // write through setAccess
     var routedUids by uids("proxied") // apps sent via WireGuard/proxy when routeAll is off
     var routeAll by bool("routeAll", true)
-    var bypassPkgs by strs("bypass"); private set // packages kept out of the tun entirely; packages, since that's what Builder takes
+    var bypassPkgs by strs(BYPASS); private set // packages kept out of the tun entirely; packages, since that's what Builder takes
     var adblock by bool("adblock")
     var lists by strs("lists")
     var sniSplit by bool("sniSplit")
@@ -119,10 +130,10 @@ class Settings private constructor(ctx: Context) {
     var blockQuic by bool("blockQuic")
     var proxyUrl by str("proxyUrl")
     var wgActive by str("wgActive")
-    var allowDomains by strs("allowDomains"); private set // write through addRule/removeRule
-    var blockRules by strs("blockDomains"); private set // domains, IPs and CIDR ranges; core splits them
+    var allowDomains by strs(ALLOW_RULES); private set // write through setRule
+    var blockRules by strs(BLOCK_RULES); private set // domains, IPs and CIDR ranges; core splits them
     var logOn by bool("logOn")
-    var skipLan by bool("skipLan", false)
+    var skipLan by bool(SKIP_LAN, false)
     var tsControlUrl by str("tsControlUrl")
     var tsAuthKey by str("tsAuthKey")
     var tsDns by bool("tsDns")
@@ -143,21 +154,24 @@ class Settings private constructor(ctx: Context) {
 
     /** Blocked and bypass are exclusive: bypassed traffic never reaches us, so it can't be blocked. */
     fun setAccess(uid: Int, pkg: String, a: Access) = write {
-        putStringSet("blocked", (if (a == Access.Blocked) blockedUids + uid else blockedUids - uid).encoded())
-        putStringSet("bypass", if (a == Access.Bypass) bypassPkgs + pkg else bypassPkgs - pkg)
+        putStringSet(BLOCKED, (if (a == Access.Blocked) blockedUids + uid else blockedUids - uid).encoded())
+        putStringSet(BYPASS, if (a == Access.Bypass) bypassPkgs + pkg else bypassPkgs - pkg)
     }
 
     fun setDns(url: String, bootstrap: String) = write { putString("dnsUrl", url); putString("dnsBootstrap", bootstrap) }
 
-    /** Adds a rule from [parseRule]; a rule is either allowed or blocked, never both. */
-    fun addRule(allow: Boolean, rule: String) = write {
-        putStringSet("allowDomains", if (allow) allowDomains + rule else allowDomains - rule)
-        putStringSet("blockDomains", if (allow) blockRules - rule else blockRules + rule)
+    /** The rule deciding domain [name], and the entry holding it (maybe a parent's). Mirrors core's dnsDecision: any allow beats any block. */
+    fun rule(name: String): Pair<Rule, String?> {
+        val chain = generateSequence(name) { it.substringAfter('.', "").ifEmpty { null } }
+        chain.firstOrNull { it in allowDomains }?.let { return Rule.Allow to it }
+        chain.firstOrNull { it in blockRules }?.let { return Rule.Block to it }
+        return Rule.Default to null
     }
 
-    fun removeRule(rule: String) = write {
-        putStringSet("allowDomains", allowDomains - rule)
-        putStringSet("blockDomains", blockRules - rule)
+    /** Sets [entry]'s own rule (from [domainRule] or [ipRule]); an entry is allowed or blocked, never both. */
+    fun setRule(entry: String, r: Rule) = write {
+        putStringSet(ALLOW_RULES, if (r == Rule.Allow) allowDomains + entry else allowDomains - entry)
+        putStringSet(BLOCK_RULES, if (r == Rule.Block) blockRules + entry else blockRules - entry)
     }
 
     /** "off", "proxy", "wg" or "exit" (a Tailscale exit node, needs tsOn). Falls back to the pre-WireGuard proxyOn switch. */
@@ -251,9 +265,8 @@ class Settings private constructor(ctx: Context) {
     }
 }
 
-/** [input] as a rule for [addRule], or null if it isn't one: a domain, or (block only) an IP or CIDR range in core's canonical form. */
-fun parseRule(input: String, allow: Boolean): String? {
-    val x = input.trim().lowercase().trimEnd('.')
-    val ip = snf.core.Core.ipRule(x).ifEmpty { null }
-    return if (ip != null) ip.takeIf { !allow } else x.takeIf { '.' in it && '/' !in it }
-}
+/** [input] as an IP or CIDR rule in core's canonical form, or null. */
+fun ipRule(input: String) = snf.core.Core.ipRule(input.trim()).ifEmpty { null }
+
+/** [input] as a domain rule, or null (IPs included). */
+fun domainRule(input: String) = input.trim().lowercase().trimEnd('.').takeIf { '.' in it && '/' !in it && ipRule(it) == null }

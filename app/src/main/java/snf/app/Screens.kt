@@ -314,7 +314,7 @@ fun PrivacyScreen(s: Settings, open: (Page) -> Unit) {
             NavRow(Icons.AutoMirrored.Rounded.AltRoute, "Route traffic", routeSummary(s)) { open(Page.Route) }
         }
         Group {
-            SwitchRow(Icons.Rounded.Router, "Bypass local network", "LAN skips the tunnel. Applies on restart.", s.skipLan) { v ->
+            SwitchRow(Icons.Rounded.Router, "Bypass local network", "LAN skips the tunnel. Restarts the VPN.", s.skipLan) { v ->
                 s.skipLan = v
             }
         }
