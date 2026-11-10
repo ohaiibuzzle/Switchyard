@@ -151,12 +151,10 @@ fun ActivityScreen(s: Settings) {
                 },
             )
             HorizontalDivider()
-            e.host?.let { parseRule(it, allow = true) }?.let { h -> // null when the "host" is an IP
-                SheetAction(Icons.Rounded.CheckCircle, "Always allow $h") { s.addRule(true, h); close() }
-                SheetAction(Icons.Rounded.Block, "Always block $h") { s.addRule(false, h); close() }
-            }
+            e.host?.let { parseRule(it, allow = true) }?.let { DomainRule(s, it) } // null when the "host" is an IP
             e.ip?.let { parseRule(it, allow = false) }?.let { ip ->
-                SheetAction(Icons.Rounded.Block, "Always block $ip") { s.addRule(false, ip); close() }
+                if (ip in s.blockRules) SheetAction(Icons.Rounded.CheckCircle, "Unblock $ip") { s.removeRule(ip); close() }
+                else SheetAction(Icons.Rounded.Block, "Always block $ip") { s.addRule(false, ip); close() }
             }
             app.pkg?.let { pkg ->
                 val blocked = s.access(e.uid, pkg) == Access.Blocked
@@ -166,6 +164,27 @@ fun ActivityScreen(s: Settings) {
             }
             SheetAction(Icons.Rounded.FilterList, "Show only ${app.label}") { appFilter = e.uid; close() }
             Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+/** Block / Default / Allow for [h]. Mirrors core's dnsDecision: an allow rule on [h] or any parent beats any block rule. */
+@Composable
+private fun DomainRule(s: Settings, h: String) {
+    val chain = generateSequence(h) { it.substringAfter('.', "").ifEmpty { null } }
+    val allowBy = chain.firstOrNull { it in s.allowDomains }
+    val blockBy = chain.firstOrNull { it in s.blockRules }
+    val selected = if (allowBy != null) 2 else if (blockBy != null) 0 else 1
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        (allowBy ?: blockBy)?.takeIf { it != h }?.let { by ->
+            Text("${if (allowBy != null) "Allowed" else "Blocked"} by rule for $by", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+            listOf("Block", "Default", "Allow").forEachIndexed { i, label ->
+                SegmentedButton(selected == i, {
+                    when (i) { 0 -> s.addRule(false, h); 1 -> s.removeRule(h); else -> s.addRule(true, h) }
+                }, SegmentedButtonDefaults.itemShape(i, 3)) { Text(label) }
+            }
         }
     }
 }
