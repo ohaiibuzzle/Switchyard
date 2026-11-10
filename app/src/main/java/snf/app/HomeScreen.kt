@@ -71,20 +71,18 @@ fun HomeScreen(s: Settings, open: (Page) -> Unit, goTo: (Tab) -> Unit) {
         Group {
             val dns = (preset?.let { "${it.name} · ${dnsKind(it.url)}" } ?: "Custom server").let { if (s.tsOn && s.tsDns) "Tailscale, then $it" else it }
             NavRow(Icons.Rounded.Dns, "Private DNS", dns) { goTo(Tab.Dns) }
-            NavRow(Icons.Rounded.Apps, "App access", listOfNotNull(
-                s.blockedUids.size.takeIf { it > 0 }?.let { "$it blocked" },
-                s.bypassPkgs.size.takeIf { it > 0 }?.let { "$it bypassed" },
-            ).joinToString(" · ").ifEmpty { "All apps allowed" }) { goTo(Tab.Apps) }
+            NavRow(Icons.Rounded.Apps, "App access", counts("All apps allowed", s.blockedUids.size to "blocked", s.bypassPkgs.size to "bypassed")) { goTo(Tab.Apps) }
             NavRow(Icons.Rounded.Block, "Ad blocking", adBlockSummary(s)) { open(Page.AdBlock) }
             NavRow(Icons.Rounded.Hub, "Tailscale", if (s.tsOn) "On" else "Off") { goTo(Tab.Tailscale) }
             NavRow(Icons.Rounded.VisibilityOff, "Privacy", privacy) { goTo(Tab.Privacy) }
         }
         Group {
             NavRow(Icons.Rounded.History, "Activity", if (s.logOn) "Recording" else "Off") { open(Page.Activity) }
-            NavRow(Icons.Rounded.Rule, "Custom rules", listOfNotNull(
-                s.blockRules.size.takeIf { it > 0 }?.let { "$it blocked" },
-                s.allowDomains.size.takeIf { it > 0 }?.let { "$it allowed" },
-            ).joinToString(" · ").ifEmpty { "None" }) { open(Page.Rules) }
+            NavRow(Icons.Rounded.Rule, "Custom rules", counts("None", s.blockRules.size to "blocked", s.allowDomains.size to "allowed")) { open(Page.Rules) }
         }
     }
 }
+
+/** "2 blocked · 1 allowed", skipping zeros; [none] when all are zero. */
+private fun counts(none: String, vararg cs: Pair<Int, String>) =
+    cs.filter { it.first > 0 }.joinToString(" · ") { "${it.first} ${it.second}" }.ifEmpty { none }

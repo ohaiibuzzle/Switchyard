@@ -89,7 +89,7 @@ class FilterVpnService : VpnService(), snf.core.Callback {
             return START_NOT_STICKY
         }
         if (intent?.action == RESTART) {
-            engine.execute { if (running) relaunch() } // a start still queued reads the latest settings itself
+            engine.execute { if (running) launch() } // a start still queued reads the latest settings itself
             return START_STICKY
         }
         cm = getSystemService(ConnectivityManager::class.java)
@@ -101,10 +101,16 @@ class FilterVpnService : VpnService(), snf.core.Callback {
         return START_STICKY
     }
 
+    /**
+     * Only call on [engine]. Starts the engine, or restarts a running one: the new tun replaces the old
+     * one before the engine lets go of it, so nothing leaks in between.
+     */
+    // shortcut: a restart drops open connections, WireGuard/Tailscale sessions and the log; hot-swap the fd if that hurts.
     private fun launch() {
         val settings = Settings.of(this)
         try {
             val pfd = establish(settings)
+            if (running) snf.core.Core.stop()
             snf.core.Core.start(pfd.detachFd().toLong(), MTU.toLong(), settings.configJson(), this)
             lastError = null
             // Only true once our tunnel is established. shortcut: read at start, so toggling Always-on shows after a restart.
@@ -113,6 +119,7 @@ class FilterVpnService : VpnService(), snf.core.Callback {
             refreshTile()
             // Starts on whatever lists are on disk; this fetches missing ones now, then checks hourly
             // (lists are re-fetched daily, by file age, since the timer's clock stops in deep sleep).
+            listTimer?.cancel(false)
             listTimer = downloads.scheduleWithFixedDelay({ syncListsNow(applicationContext, force = false) }, 0, 1, TimeUnit.HOURS)
         } catch (e: Exception) {
             lastError = e.message
@@ -120,22 +127,6 @@ class FilterVpnService : VpnService(), snf.core.Callback {
             shutdown()
         } finally {
             starting = false
-        }
-    }
-
-    /** Only call on [engine]. The new tun replaces the old one before the engine lets go of it, so nothing leaks in between. */
-    // shortcut: a full engine stop/start drops open connections, WireGuard/Tailscale sessions and the log; hot-swap the fd if that hurts.
-    private fun relaunch() {
-        val settings = Settings.of(this)
-        try {
-            val pfd = establish(settings)
-            snf.core.Core.stop()
-            snf.core.Core.start(pfd.detachFd().toLong(), MTU.toLong(), settings.configJson(), this)
-            lastError = null
-        } catch (e: Exception) {
-            lastError = e.message
-            Log.e("snf", "restart", e)
-            shutdown()
         }
     }
 

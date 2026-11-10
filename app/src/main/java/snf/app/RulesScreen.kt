@@ -17,7 +17,7 @@ fun RulesScreen(s: Settings) {
     var allowTab by rememberSaveable { mutableStateOf(false) }
     var input by rememberSaveable { mutableStateOf("") }
     val rules = (if (allowTab) s.allowDomains else s.blockRules).sorted()
-    val newRule = parseRule(input, allowTab)
+    val newRule = if (allowTab) domainRule(input) else ipRule(input) ?: domainRule(input) // core has no IP allow
 
     Column(Modifier.fillMaxSize()) {
         PrimaryTabRow(if (allowTab) 1 else 0) {
@@ -31,7 +31,7 @@ fun RulesScreen(s: Settings) {
                         input, { input = it }, Modifier.weight(1f), singleLine = true,
                         placeholder = { Text(if (allowTab) "example.com" else "example.com or 1.2.3.0/24") },
                     )
-                    TextButton({ newRule?.let { s.addRule(allowTab, it) }; input = "" }, enabled = newRule != null) { Text("Add") }
+                    TextButton({ newRule?.let { s.setRule(it, if (allowTab) Rule.Allow else Rule.Block) }; input = "" }, enabled = newRule != null) { Text("Add") }
                 }
                 Spacer(Modifier.height(8.dp))
                 Hint(if (allowTab) "Beats ad lists. Domains only." else "Apps may keep a cached address for a few minutes.")
@@ -42,7 +42,7 @@ fun RulesScreen(s: Settings) {
                         ListItem(
                             headlineContent = { Text(r) },
                             leadingContent = { Icon(if (allowTab) Icons.Rounded.CheckCircle else Icons.Rounded.Block, null) },
-                            trailingContent = { IconButton({ s.removeRule(r) }) { Icon(Icons.Rounded.Delete, "Remove rule for $r") } },
+                            trailingContent = { IconButton({ s.setRule(r, Rule.Default) }) { Icon(Icons.Rounded.Delete, "Remove rule for $r") } },
                             colors = rowColors,
                         )
                     }
