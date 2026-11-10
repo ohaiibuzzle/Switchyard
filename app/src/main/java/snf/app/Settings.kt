@@ -119,8 +119,8 @@ class Settings private constructor(ctx: Context) {
     var blockQuic by bool("blockQuic")
     var proxyUrl by str("proxyUrl")
     var wgActive by str("wgActive")
-    var allowDomains by strs("allowDomains")
-    var blockDomains by strs("blockDomains")
+    var allowDomains by strs("allowDomains"); private set // write through addRule/removeRule
+    var blockRules by strs("blockDomains"); private set // domains, IPs and CIDR ranges; core splits them
     var logOn by bool("logOn")
     var skipLan by bool("skipLan", false)
     var tsControlUrl by str("tsControlUrl")
@@ -149,15 +149,15 @@ class Settings private constructor(ctx: Context) {
 
     fun setDns(url: String, bootstrap: String) = write { putString("dnsUrl", url); putString("dnsBootstrap", bootstrap) }
 
-    /** Adds a domain rule; a domain is either allowed or blocked, never both. */
-    fun addRule(allow: Boolean, domain: String) = write {
-        putStringSet("allowDomains", if (allow) allowDomains + domain else allowDomains - domain)
-        putStringSet("blockDomains", if (allow) blockDomains - domain else blockDomains + domain)
+    /** Adds a rule from [parseRule]; a rule is either allowed or blocked, never both. */
+    fun addRule(allow: Boolean, rule: String) = write {
+        putStringSet("allowDomains", if (allow) allowDomains + rule else allowDomains - rule)
+        putStringSet("blockDomains", if (allow) blockRules - rule else blockRules + rule)
     }
 
-    fun removeRule(domain: String) = write {
-        putStringSet("allowDomains", allowDomains - domain)
-        putStringSet("blockDomains", blockDomains - domain)
+    fun removeRule(rule: String) = write {
+        putStringSet("allowDomains", allowDomains - rule)
+        putStringSet("blockDomains", blockRules - rule)
     }
 
     /** "off", "proxy", "wg" or "exit" (a Tailscale exit node, needs tsOn). Falls back to the pre-WireGuard proxyOn switch. */
@@ -209,7 +209,7 @@ class Settings private constructor(ctx: Context) {
         put("routeAll", routeAll)
         put("routeUids", JSONArray(routedUids.toList()))
         put("allowDomains", JSONArray(allowDomains.toList()))
-        put("blockDomains", JSONArray(blockDomains.toList()))
+        put("blockRules", JSONArray(blockRules.toList()))
         put("log", logOn)
         put("tsDir", if (tsOn) File(app.filesDir, "tailscale").path else "")
         // Like Tailscale's app: the name set in Android's About phone, else the model; control turns it into a DNS label.
@@ -249,4 +249,11 @@ class Settings private constructor(ctx: Context) {
         if (downloaded) write { putLong("listsAt", System.currentTimeMillis()) }
         return errors
     }
+}
+
+/** [input] as a rule for [addRule], or null if it isn't one: a domain, or (block only) an IP or CIDR range in core's canonical form. */
+fun parseRule(input: String, allow: Boolean): String? {
+    val x = input.trim().lowercase().trimEnd('.')
+    val ip = snf.core.Core.ipRule(x).ifEmpty { null }
+    return if (ip != null) ip.takeIf { !allow } else x.takeIf { '.' in it && '/' !in it }
 }

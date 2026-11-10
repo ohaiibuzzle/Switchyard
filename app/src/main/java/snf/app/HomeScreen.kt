@@ -81,6 +81,10 @@ fun HomeScreen(s: Settings, open: (Page) -> Unit, goTo: (Tab) -> Unit) {
         }
         Group {
             NavRow(Icons.Rounded.History, "Activity", if (s.logOn) "Recording" else "Off") { open(Page.Activity) }
+            NavRow(Icons.Rounded.Rule, "Custom rules", listOfNotNull(
+                s.blockRules.size.takeIf { it > 0 }?.let { "$it blocked" },
+                s.allowDomains.size.takeIf { it > 0 }?.let { "$it allowed" },
+            ).joinToString(" · ").ifEmpty { "None" }) { open(Page.Rules) }
         }
     }
 }

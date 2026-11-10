@@ -27,6 +27,9 @@ data class Ev(
     val dst: String?, val host: String?, val action: String, val reason: String?, val err: String?,
 )
 
+/** The flow's IP, from dst "1.2.3.4:443" or "[::1]:443"; null for DNS entries, whose dst is the resolver we stand in for. */
+private val Ev.ip get() = dst?.takeIf { proto != "dns" }?.substringBeforeLast(':')?.trim('[', ']')
+
 // Outside the composable so leaving the screen doesn't drop what was fetched.
 private val events = mutableStateListOf<Ev>()
 private var lastSeq = 0L
@@ -70,7 +73,7 @@ private fun appFor(ctx: Context, uid: Int): AppId = appIds.getOrPut(uid) {
 private fun reasonText(e: Ev) = when (e.action) {
     "block" -> when (e.reason) {
         "app" -> "App blocked"
-        "rule" -> "Your rule"
+        "rule" -> "Custom rule"
         "adblock" -> "Ad list"
         "bypass" -> "DNS bypass"
         "dot" -> "Private DNS port"
@@ -87,12 +90,9 @@ private fun reasonText(e: Ev) = when (e.action) {
 fun ActivityScreen(s: Settings) {
     val ctx = LocalContext.current
     val logOn = s.logOn
-    val allow = s.allowDomains.sorted()
-    val block = s.blockDomains.sorted()
     var blockedOnly by remember { mutableStateOf(true) }
     var appFilter by remember { mutableStateOf<Int?>(null) }
     var selected by remember { mutableStateOf<Ev?>(null) }
-    var newRule by remember { mutableStateOf("") }
     LaunchedEffect(Unit) { while (true) { fetchEvents(); delay(1.seconds) } }
 
     val shown = events.asReversed().filter { (!blockedOnly || it.action != "allow") && (appFilter == null || it.uid == appFilter) }
@@ -105,31 +105,6 @@ fun ActivityScreen(s: Settings) {
                     s.logOn = v
                 }
             }
-        }
-        item {
-            Group("Your rules") {
-                (allow.map { it to true } + block.map { it to false }).forEach { (d, isAllow) ->
-                    ListItem(
-                        headlineContent = { Text(d) },
-                        supportingContent = { Text(if (isAllow) "Always allowed" else "Always blocked") },
-                        leadingContent = { Icon(if (isAllow) Icons.Rounded.CheckCircle else Icons.Rounded.Block, null) },
-                        trailingContent = {
-                            IconButton({ s.removeRule(d) }) {
-                                Icon(Icons.Rounded.Delete, "Remove rule for $d")
-                            }
-                        },
-                        colors = rowColors,
-                    )
-                }
-                Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(newRule, { newRule = it }, Modifier.weight(1f), placeholder = { Text("example.com") }, singleLine = true)
-                    val d = newRule.trim().lowercase().trimEnd('.')
-                    TextButton({ s.addRule(true, d); newRule = "" }, enabled = '.' in d) { Text("Allow") }
-                    TextButton({ s.addRule(false, d); newRule = "" }, enabled = '.' in d) { Text("Block") }
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            Hint("Apps may keep a cached address for a few minutes.")
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -176,10 +151,12 @@ fun ActivityScreen(s: Settings) {
                 },
             )
             HorizontalDivider()
-            val h = e.host
-            if (h != null) {
+            e.host?.let { parseRule(it, allow = true) }?.let { h -> // null when the "host" is an IP
                 SheetAction(Icons.Rounded.CheckCircle, "Always allow $h") { s.addRule(true, h); close() }
                 SheetAction(Icons.Rounded.Block, "Always block $h") { s.addRule(false, h); close() }
+            }
+            e.ip?.let { parseRule(it, allow = false) }?.let { ip ->
+                SheetAction(Icons.Rounded.Block, "Always block $ip") { s.addRule(false, ip); close() }
             }
             app.pkg?.let { pkg ->
                 val blocked = s.access(e.uid, pkg) == Access.Blocked

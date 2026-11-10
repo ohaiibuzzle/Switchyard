@@ -24,12 +24,12 @@ type config struct {
 	TLSFrag      bool     `json:"tlsFrag"`
 	HostTricks   bool     `json:"hostTricks"`
 	BlockQUIC    bool     `json:"blockQuic"`
-	ProxyURL     string   `json:"proxyUrl"`     // socks5://[user:pass@]host:port or http://host:port
-	WGConf       string   `json:"wgConf"`       // wg-quick config text; takes precedence over ProxyURL
-	RouteAll     bool     `json:"routeAll"`     // every app goes via WireGuard/proxy/exit node; else only RouteUIDs
+	ProxyURL     string   `json:"proxyUrl"` // socks5://[user:pass@]host:port or http://host:port
+	WGConf       string   `json:"wgConf"`   // wg-quick config text; takes precedence over ProxyURL
+	RouteAll     bool     `json:"routeAll"` // every app goes via WireGuard/proxy/exit node; else only RouteUIDs
 	RouteUIDs    []int    `json:"routeUids"`
 	AllowDomains []string `json:"allowDomains"` // user rules, subdomains included
-	BlockDomains []string `json:"blockDomains"`
+	BlockRules   []string `json:"blockRules"`   // user rules: domains, single IPs or CIDR ranges
 	Log          bool     `json:"log"`
 	TSDir        string   `json:"tsDir"`        // Tailscale state dir; empty = off. Tailnet IPs go here before WireGuard or proxy.
 	TSHostname   string   `json:"tsHostname"`   // the device's name, as Tailscale's own app uses
@@ -51,6 +51,7 @@ type state struct {
 	blocklist domainSet
 	allow     domainSet
 	block     domainSet
+	blockIPs  prefixSet
 	up        upstream.Upstream
 	dial      dialFunc
 	wg        *wgTunnel
@@ -187,8 +188,9 @@ func newState(js string) (*state, error) {
 	if c.TSDNS && ts != nil {
 		up = tsUpstream{ts.queryDNS, up}
 	}
+	block, blockIPs := splitRules(c.BlockRules)
 	return &state{
 		cfg: c, blocked: set(c.BlockedUIDs), routed: set(c.RouteUIDs), blocklist: loadLists(c.Blocklists),
-		allow: domains(c.AllowDomains), block: domains(c.BlockDomains), up: up, dial: d, wg: wg, ts: ts,
+		allow: domains(c.AllowDomains), block: block, blockIPs: blockIPs, up: up, dial: d, wg: wg, ts: ts,
 	}, nil
 }

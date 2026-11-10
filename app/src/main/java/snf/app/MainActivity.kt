@@ -72,7 +72,7 @@ enum class Tab(val title: String, val label: String, val icon: ImageVector) {
 }
 
 /** Sub-pages, opened over a tab with a back arrow. */
-enum class Page(val title: String) { Activity("Activity"), AdBlock("Ad blocking"), Disguise("Disguise traffic"), Route("Route traffic") }
+enum class Page(val title: String) { Activity("Activity"), Rules("Custom rules"), AdBlock("Ad blocking"), Disguise("Disguise traffic"), Route("Route traffic") }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -113,6 +113,7 @@ fun App(s: Settings) {
                     BackHandler(page != null) { page = null }
                     when (page) {
                         Page.Activity -> ActivityScreen(s)
+                        Page.Rules -> RulesScreen(s)
                         Page.AdBlock -> AdBlockScreen(s)
                         Page.Disguise -> DisguiseScreen(s)
                         Page.Route -> ScreenColumn { RouteGroup(s) }

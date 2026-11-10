@@ -10,7 +10,7 @@ What the app does:
 - **Per-app firewall.** Each flow is matched to its app (UID), and blocked apps get a RST or a dropped packet.
 - **Ad blocking.** Domain lists (hosts, plain domains or adblock `||x^`) are downloaded and matched on the device. Blocked names get NXDOMAIN.
 - **Anti-censorship.** Optional tricks: split the TLS ClientHello inside the SNI, fragment the TLS record, mangle the HTTP Host header, block QUIC.
-- **Activity log and your rules.** An optional in-memory log records each decision (app, domain, IP, allow/block, and why). Your own domain allow/block rules can be added straight from a log entry.
+- **Activity log and custom rules.** An optional in-memory log records each decision (app, domain, IP, allow/block, and why). Your own domain allow/block rules and IP/CIDR block rules can be added straight from a log entry.
 - **Optional upstream.** Traffic can go through a SOCKS5 or HTTP CONNECT proxy (TCP only), or through userspace WireGuard (TCP and UDP). Saved WireGuard profiles can be switched live.
 - **Tailscale.** An embedded tsnet node reaches tailnet IPs (100.64.0.0/10, fd7a:115c:a1e0::/48) for every app. It's its own switch: tailnet IPs go to Tailscale first, everything else follows the route mode, so it works alongside WireGuard or a proxy. Route mode "exit" sends the routed apps' internet through a Tailscale exit node instead; `tsNode.dial` refuses anything tsnet has no Tailscale route for, so a missing or offline exit node fails closed rather than going direct. Optional "Tailscale DNS" asks the tailnet's resolver first and falls back to the chosen provider.
 
@@ -23,7 +23,7 @@ core/                 Go engine, bound to Java with gomobile -> app/libs/core.aa
   events.go           in-memory activity log (last 2000), IP->domain memory
   wireguard.go        wg-quick parser -> UAPI, wireguard-go on its own netstack, WgHandshakeAge
   tailscale.go        tsnet node (tsFor), tailnet routing, Tailscale DNS with fallback, TsStatus/TsPeers/TsLogin/TsLogout
-  blocklist.go        domainSet: list parsing + suffix lookup
+  blocklist.go        domainSet: list parsing + suffix lookup; prefixSet: your IP/CIDR rules (splitRules, IPRule)
   desync.go           SNI split, TLS record fragmentation, HTTP Host tricks (pure byte functions)
   dialer.go           direct / SOCKS5 / HTTP CONNECT dialers
   routes.go           RoutesExcluding: tun routes minus the local network
@@ -38,7 +38,8 @@ app/src/main/java/snf/app/
   Screens.kt          shared row components + DNS / Apps screens, Privacy menu and its sub-pages
   WireGuardScreen.kt  WireGuard status, profile list, config editor
   TailscaleScreen.kt  Tailscale switch, status and sign-in, device list, collapsible control URL and auth key
-  ActivityScreen.kt   log view (polls Core.events once a second), your rules, per-entry action sheet
+  ActivityScreen.kt   log view (polls Core.events once a second), per-entry action sheet (adds rules)
+  RulesScreen.kt      Custom rules: Blocked tab (domains, IPs, CIDR) and Allowed tab (domains)
 build-core.sh         rebuilds app/libs/core.aar
 ```
 
@@ -75,6 +76,7 @@ build-core.sh         rebuilds app/libs/core.aar
   - It's off unless `log` is set in the config; then `record()` returns after one atomic load.
   - Kotlin polls `Events(afterSeq)`. Sequence numbers never reset within the process, so a VPN restart doesn't confuse the poller. `Stop()` clears the log.
 - **Domain decisions:** `dnsDecision` applies, in order: your allow rule, your block rule, ad lists, the DNS-bypass list. Rules act **only at DNS time**, so apps holding a cached answer keep connecting until the TTL expires.
+- **IP rules:** block-only, global, stored alongside the block domains (core's `splitRules` separates them), checked per flow in `verdict` (port 53 exempt, since we answer DNS ourselves). Bad entries are skipped, not fatal.
 - **Block lists:** every download goes through `FilterVpnService.syncLists`, one at a time on its own executor (never `engine`). The engine starts on the lists already on disk; while it runs, an hourly check fetches missing or day-old lists, and enabling a list fetches it right away. A download writes the `listsAt` pref, so the usual prefs listener refreshes the UI and reconfigures; a failed one changes nothing.
 - **WireGuard** handshakes lazily, so `startWG` sends one keepalive per peer to bring it up straight away.
 - **UI state:**
@@ -82,7 +84,7 @@ build-core.sh         rebuilds app/libs/core.aar
   - Multi-key writes (`setDns`, `addRule`, `removeRule`, `saveWg`) are one `edit()`.
   - Screens just write `Settings`. Its prefs listener calls `FilterVpnService.reconfigure`, which merges a burst of writes into one reconfigure. A list download writes `listsAt` so it takes the same path.
   - Engine start, reconfigure and stop all run on one single-thread executor in `FilterVpnService`, so they apply in order. `starting`, `running` and `lastError` are Compose state; the UI reads them directly.
-  - Tabs are the `Tab` enum. `rememberSaveableStateHolder` keeps each tab's scroll position. Sub-pages (Activity, Ad blocking, Disguise, Route) are the `Page` enum, opened over a tab with a back arrow.
+  - Tabs are the `Tab` enum. `rememberSaveableStateHolder` keeps each tab's scroll position. Sub-pages (Activity, Custom rules, Ad blocking, Disguise, Route) are the `Page` enum, opened over a tab with a back arrow.
 
 ## Gotchas
 

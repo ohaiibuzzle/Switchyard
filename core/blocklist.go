@@ -3,6 +3,7 @@ package core
 import (
 	"bufio"
 	"io"
+	"net/netip"
 	"os"
 	"strings"
 )
@@ -72,4 +73,62 @@ func loadLists(paths []string) domainSet {
 		f.Close()
 	}
 	return s
+}
+
+// prefixSet holds the user's IP rules: single IPs and CIDR ranges.
+type prefixSet []netip.Prefix
+
+// parsePrefix reads a single IP or CIDR range; a single IP becomes a full-length prefix.
+func parsePrefix(x string) (netip.Prefix, bool) {
+	p, err := netip.ParsePrefix(x)
+	if err != nil {
+		a, err := netip.ParseAddr(x)
+		if err != nil {
+			return netip.Prefix{}, false
+		}
+		a = a.WithZone("")
+		p = netip.PrefixFrom(a, a.BitLen())
+	}
+	if a := p.Addr(); a.Is4In6() && p.Bits() >= 96 { // flows arrive unmapped
+		p = netip.PrefixFrom(a.Unmap(), p.Bits()-96)
+	}
+	return p.Masked(), true
+}
+
+// splitRules sorts the user's block rules into IPs/CIDR ranges and domains (anything else).
+func splitRules(xs []string) (domainSet, prefixSet) {
+	var ps prefixSet
+	var ds []string
+	for _, x := range xs {
+		if p, ok := parsePrefix(x); ok {
+			ps = append(ps, p)
+		} else {
+			ds = append(ds, x)
+		}
+	}
+	return domains(ds), ps
+}
+
+// IPRule returns x as a canonical IP rule ("1.2.3.4", "10.0.0.0/8"), or "" if it isn't one.
+// The app validates and stores rules through it, so stored rules are exactly what splitRules accepts.
+func IPRule(x string) string {
+	p, ok := parsePrefix(x)
+	switch {
+	case !ok:
+		return ""
+	case p.IsSingleIP():
+		return p.Addr().String()
+	}
+	return p.String()
+}
+
+// has reports whether any rule covers a.
+// shortcut: linear scan, fine for hand-written rules; use a prefix trie if rules ever come from imported lists.
+func (ps prefixSet) has(a netip.Addr) bool {
+	for _, p := range ps {
+		if p.Contains(a) {
+			return true
+		}
+	}
+	return false
 }

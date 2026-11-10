@@ -144,7 +144,7 @@ fun DnsScreen(s: Settings) {
             }
         }
         Group("Protection") {
-            SwitchRow(Icons.Rounded.GppGood, "Block apps' own DNS", "Stops DoH, DoT and DoQ", s.blockBypass) { v ->
+            SwitchRow(Icons.Rounded.GppGood, "Block apps' own DNS", "Stops DoT, DoQ and some DoH", s.blockBypass) { v ->
                 s.blockBypass = v
             }
         }

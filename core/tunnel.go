@@ -143,6 +143,8 @@ func verdict(s *state, proto int, src, dst netip.AddrPort) (int, string) {
 	switch p := dst.Port(); {
 	case s.blocked[uid]:
 		why = "app"
+	case p != 53 && s.blockIPs.has(dst.Addr()): // we answer DNS ourselves, so no query reaches a blocked IP anyway
+		why = "rule"
 	case s.cfg.BlockBypass && p == 853:
 		why = "dot"
 	case s.cfg.BlockBypass && p == 443 && bypassIPs[dst.Addr()]:
