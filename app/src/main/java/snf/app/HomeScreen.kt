@@ -16,6 +16,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
+import androidx.window.core.layout.WindowSizeClass
 
 @Composable
 fun HomeScreen(s: Settings, open: (Page) -> Unit, goTo: (Tab) -> Unit) {
@@ -33,7 +35,7 @@ fun HomeScreen(s: Settings, open: (Page) -> Unit, goTo: (Tab) -> Unit) {
     val btnColor by animateColorAsState(if (running) c.primary else c.surfaceContainerHighest)
     val iconColor by animateColorAsState(if (running) c.onPrimary else c.onSurfaceVariant)
 
-    ScreenColumn {
+    val powerBlock = @Composable {
         Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Surface(
                 onClick = { if (running || starting) FilterVpnService.stop(act) else act.startVpn() },
@@ -52,6 +54,8 @@ fun HomeScreen(s: Settings, open: (Page) -> Unit, goTo: (Tab) -> Unit) {
             }
             Text(status, style = MaterialTheme.typography.headlineSmall)
         }
+    }
+    val details = @Composable {
         if (err != null) Notice(Icons.Rounded.ErrorOutline, "Couldn't start the filter", err)
         if (!batteryExempt) Notice(
             Icons.Rounded.BatteryAlert, "Let Switchyard run in the background",
@@ -81,6 +85,12 @@ fun HomeScreen(s: Settings, open: (Page) -> Unit, goTo: (Tab) -> Unit) {
             NavRow(Icons.Rounded.Rule, "Custom rules", counts("None", s.blockRules.size to "blocked", s.allowDomains.size to "allowed")) { open(Page.Rules) }
         }
     }
+    // Side by side on landscape phones, so the rows aren't all below the fold. Needs width too: split-screen is short and narrow.
+    val wide = currentWindowAdaptiveInfoV2().windowSizeClass.isWidthAtLeastBreakpoint(WindowSizeClass.WIDTH_DP_MEDIUM_LOWER_BOUND)
+    if (isShort() && wide) Row(Modifier.fillMaxSize()) {
+        Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) { powerBlock() }
+        Box(Modifier.weight(1f)) { ScreenColumn { details() } }
+    } else ScreenColumn { powerBlock(); details() }
 }
 
 /** "2 blocked · 1 allowed", skipping zeros; [none] when all are zero. */

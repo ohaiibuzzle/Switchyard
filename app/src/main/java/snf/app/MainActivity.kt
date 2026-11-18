@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.window.core.layout.WindowSizeClass
 
 class MainActivity : ComponentActivity() {
     private val vpnConsent = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -71,6 +72,10 @@ enum class Tab(val title: String, val label: String, val icon: ImageVector) {
     Privacy("Privacy", "Privacy", Icons.Rounded.VisibilityOff),
 }
 
+/** Landscape phone: too short for a bottom bar, a large title or a stacked Home. */
+@Composable
+fun isShort() = !currentWindowAdaptiveInfoV2().windowSizeClass.isHeightAtLeastBreakpoint(WindowSizeClass.HEIGHT_DP_MEDIUM_LOWER_BOUND)
+
 /** Sub-pages, opened over a tab with a back arrow. */
 enum class Page(val title: String) { Activity("Activity"), Rules("Custom rules"), AdBlock("Ad blocking"), Disguise("Disguise traffic"), Route("Route traffic") }
 
@@ -82,9 +87,11 @@ fun App(s: Settings) {
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     val tabState = rememberSaveableStateHolder() // keeps each tab's scroll position across tab switches
     val open = { p: Page -> page = p }
-    // Bar on phones, rail on tablets. Sub-pages hide the bar (they have a back arrow) but keep the rail,
-    // so wide layouts don't jump sideways.
-    val auto = NavigationSuiteScaffoldDefaults.navigationSuiteType(currentWindowAdaptiveInfoV2())
+    // Bar on portrait phones; rail on tablets and when short (the default would pick a bar there, eating scarce height).
+    // Sub-pages hide the bar (they have a back arrow) but keep the rail, so wide layouts don't jump sideways.
+    val short = isShort()
+    val auto = if (short) NavigationSuiteType.NavigationRail
+        else NavigationSuiteScaffoldDefaults.navigationSuiteType(currentWindowAdaptiveInfoV2())
     val isBar = auto == NavigationSuiteType.NavigationBar ||
         auto == NavigationSuiteType.ShortNavigationBarCompact || auto == NavigationSuiteType.ShortNavigationBarMedium
     val navType = if (page != null && isBar) NavigationSuiteType.None else auto
@@ -109,7 +116,8 @@ fun App(s: Settings) {
                     if (p != null) TopAppBar(
                         title = { Text(p.title) },
                         navigationIcon = { IconButton({ page = null }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
-                    ) else LargeTopAppBar(
+                    ) else if (short) TopAppBar(title = { Text(tab.title) })
+                    else LargeTopAppBar(
                         title = { Text(tab.title) }, scrollBehavior = scroll,
                         // Flat when collapsed: a tinted bar only spans the capped column and leaves a seam by the rail.
                         colors = TopAppBarDefaults.topAppBarColors(scrolledContainerColor = MaterialTheme.colorScheme.surface),
