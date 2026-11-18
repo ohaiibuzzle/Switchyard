@@ -4,6 +4,7 @@ go 1.27.4
 
 require (
 	github.com/AdguardTeam/dnsproxy v0.86.0
+	github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20261116
 	github.com/miekg/dns v1.1.73
 	golang.org/x/crypto v0.59.0
 	golang.org/x/net v0.62.0

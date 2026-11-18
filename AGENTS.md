@@ -11,7 +11,7 @@ What the app does:
 - **Ad blocking.** Domain lists (hosts, plain domains or adblock `||x^`) are downloaded and matched on the device. Blocked names get NXDOMAIN.
 - **Anti-censorship.** Optional tricks: split the TLS ClientHello inside the SNI, fragment the TLS record, mangle the HTTP Host header, block QUIC.
 - **Activity log and custom rules.** An optional in-memory log records each decision (app, domain, IP, allow/block, and why). Your own domain allow/block rules and IP/CIDR block rules can be added straight from a log entry.
-- **Optional upstream.** Traffic can go through a SOCKS5 or HTTP CONNECT proxy (TCP only), or through userspace WireGuard (TCP and UDP). Saved WireGuard profiles can be switched live.
+- **Optional upstream.** Traffic can go through a SOCKS5 or HTTP CONNECT proxy (TCP only), or through userspace WireGuard or AmneziaWG (TCP and UDP). Saved WireGuard profiles can be switched live.
 - **Tailscale.** An embedded tsnet node reaches tailnet IPs (100.64.0.0/10, fd7a:115c:a1e0::/48) for every app. It's its own switch: tailnet IPs go to Tailscale first, everything else follows the route mode, so it works alongside WireGuard or a proxy. Route mode "exit" sends the routed apps' internet through a Tailscale exit node instead; `tsNode.dial` refuses anything tsnet has no Tailscale route for, so a missing or offline exit node fails closed rather than going direct. Optional "Tailscale DNS" asks the tailnet's resolver first and falls back to the chosen provider.
 
 ## Layout
@@ -21,7 +21,7 @@ core/                 Go engine, bound to Java with gomobile -> app/libs/core.aa
   tunnel.go           (linux) Start/Reconfigure/Stop, gVisor netstack on the tun fd, TCP/UDP forwarders, DNS serving
   routing.go          config JSON -> immutable `state` (newState), per-flow routing, dnsDecision (rule precedence)
   events.go           in-memory activity log (last 2000), IP->domain memory
-  wireguard.go        wg-quick parser -> UAPI, wireguard-go on its own netstack, WgHandshakeAge
+  wireguard.go        wg-quick parser -> UAPI (incl. AmneziaWG Jc/S/H/I keys), amneziawg-go on its own netstack, WgHandshakeAge
   tailscale.go        tsnet node (tsFor), tailnet routing, Tailscale DNS with fallback, TsStatus/TsPeers/TsLogin/TsLogout
   blocklist.go        domainSet: list parsing + suffix lookup; prefixSet: your IP/CIDR rules (splitRules, IPRule)
   desync.go           SNI split, TLS record fragmentation, HTTP Host tricks (pure byte functions)

@@ -13,15 +13,15 @@ import (
 	"sync"
 	"time"
 
-	"golang.zx2c4.com/wireguard/conn"
-	"golang.zx2c4.com/wireguard/device"
-	"golang.zx2c4.com/wireguard/tun/netstack"
+	"github.com/amnezia-vpn/amneziawg-go/v3/conn"
+	"github.com/amnezia-vpn/amneziawg-go/v3/device"
+	"github.com/amnezia-vpn/amneziawg-go/v3/tun/netstack"
 )
 
 type wgConfig struct {
 	addrs   []netip.Addr
 	mtu     int
-	uapi    string // wireguard-go IPC "set" body
+	uapi    string // IPC "set" body: device lines, then peers
 	allowed []netip.Prefix
 	peers   []string // hex public keys
 }
@@ -38,7 +38,9 @@ func wgKey(b64 string) (string, error) {
 // DNS is ours, and there is no kernel interface to script.
 func parseWG(s string, resolve func(host string) (netip.Addr, error)) (*wgConfig, error) {
 	c := &wgConfig{mtu: 1420}
-	var u strings.Builder
+	// UAPI wants device keys before the first public_key, so the sections build separately.
+	var dev, peers strings.Builder
+	hasKey := false
 	section := ""
 	sc := bufio.NewScanner(strings.NewReader(s))
 	for sc.Scan() {
@@ -73,7 +75,14 @@ func parseWG(s string, resolve func(host string) (netip.Addr, error)) (*wgConfig
 			if err != nil {
 				return nil, fmt.Errorf("PrivateKey: %w", err)
 			}
-			fmt.Fprintf(&u, "private_key=%s\nreplace_peers=true\n", h)
+			fmt.Fprintf(&dev, "private_key=%s\nreplace_peers=true\n", h)
+			hasKey = true
+		case "interface.jc", "interface.jmin", "interface.jmax",
+			"interface.s1", "interface.s2", "interface.s3", "interface.s4",
+			"interface.h1", "interface.h2", "interface.h3", "interface.h4",
+			"interface.i1", "interface.i2", "interface.i3", "interface.i4", "interface.i5":
+			// AmneziaWG obfuscation; IpcSet validates the values.
+			fmt.Fprintf(&dev, "%s=%s\n", k, v)
 		case "interface.address":
 			for _, a := range list() {
 				p, err := netip.ParsePrefix(a)
@@ -98,14 +107,14 @@ func parseWG(s string, resolve func(host string) (netip.Addr, error)) (*wgConfig
 				return nil, fmt.Errorf("PublicKey: %w", err)
 			}
 			// public_key starts a new peer block in UAPI; later peer keys apply to it.
-			fmt.Fprintf(&u, "public_key=%s\nreplace_allowed_ips=true\n", h)
+			fmt.Fprintf(&peers, "public_key=%s\nreplace_allowed_ips=true\n", h)
 			c.peers = append(c.peers, h)
 		case "peer.presharedkey":
 			h, err := wgKey(v)
 			if err != nil {
 				return nil, fmt.Errorf("PresharedKey: %w", err)
 			}
-			fmt.Fprintf(&u, "preshared_key=%s\n", h)
+			fmt.Fprintf(&peers, "preshared_key=%s\n", h)
 		case "peer.endpoint":
 			host, port, err := net.SplitHostPort(v)
 			if err != nil {
@@ -122,25 +131,25 @@ func parseWG(s string, resolve func(host string) (netip.Addr, error)) (*wgConfig
 			if err != nil {
 				return nil, fmt.Errorf("Endpoint port %q", port)
 			}
-			fmt.Fprintf(&u, "endpoint=%s\n", netip.AddrPortFrom(ip, uint16(p)))
+			fmt.Fprintf(&peers, "endpoint=%s\n", netip.AddrPortFrom(ip, uint16(p)))
 		case "peer.allowedips":
 			for _, a := range list() {
 				p, err := netip.ParsePrefix(a)
 				if err != nil {
 					return nil, fmt.Errorf("AllowedIPs %q: %w", a, err)
 				}
-				fmt.Fprintf(&u, "allowed_ip=%s\n", p.Masked())
+				fmt.Fprintf(&peers, "allowed_ip=%s\n", p.Masked())
 				c.allowed = append(c.allowed, p.Masked())
 			}
 		case "peer.persistentkeepalive":
 			if _, err := strconv.Atoi(v); err != nil {
 				return nil, fmt.Errorf("bad PersistentKeepalive %q", v)
 			}
-			fmt.Fprintf(&u, "persistent_keepalive_interval=%s\n", v)
+			fmt.Fprintf(&peers, "persistent_keepalive_interval=%s\n", v)
 		}
 	}
-	c.uapi = u.String()
-	if !strings.HasPrefix(c.uapi, "private_key=") || len(c.addrs) == 0 || len(c.peers) == 0 {
+	c.uapi = dev.String() + peers.String()
+	if !hasKey || len(c.addrs) == 0 || len(c.peers) == 0 {
 		return nil, fmt.Errorf("config needs [Interface] PrivateKey and Address, then a [Peer] with PublicKey")
 	}
 	return c, nil

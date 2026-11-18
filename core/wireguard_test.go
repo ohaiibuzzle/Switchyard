@@ -11,10 +11,14 @@ import (
 	"testing"
 	"time"
 
+	awgconn "github.com/amnezia-vpn/amneziawg-go/v3/conn"
+	awgdev "github.com/amnezia-vpn/amneziawg-go/v3/device"
+	awgnet "github.com/amnezia-vpn/amneziawg-go/v3/tun/netstack"
 	"golang.org/x/crypto/curve25519"
 	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/device"
 	"golang.zx2c4.com/wireguard/tun/netstack"
+	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 )
 
 func keypair(t *testing.T) (priv, pub []byte) {
@@ -34,6 +38,7 @@ func TestParseWG(t *testing.T) {
 	priv, _ := keypair(t)
 	conf := fmt.Sprintf(`
 [Interface]
+Jc = 4
 PrivateKey = %s   # comment
 Address = 10.64.0.2/32, fd00::2/128
 DNS = 10.64.0.1
@@ -66,8 +71,11 @@ PersistentKeepalive = 25
 			t.Errorf("uapi missing %q:\n%s", want, c.uapi)
 		}
 	}
-	if !strings.HasPrefix(c.uapi, "private_key=") {
-		t.Error("private_key must come first")
+	pk := strings.Index(c.uapi, "public_key=")
+	for _, dev := range []string{"private_key=", "jc=4\n"} {
+		if j := strings.Index(c.uapi, dev); j < 0 || j > pk {
+			t.Errorf("%q must be a device line before the peer:\n%s", dev, c.uapi)
+		}
 	}
 
 	split, _ := parseWG(strings.Replace(conf, "0.0.0.0/0, ::/0", "10.0.0.0/8", 1), func(string) (netip.Addr, error) { return netip.MustParseAddr("203.0.113.7"), nil })
@@ -82,23 +90,49 @@ PersistentKeepalive = 25
 	}
 }
 
-// TestWireGuardLoopback runs a real handshake against an in-process peer and
-// pushes TCP and UDP through the tunnel.
-func TestWireGuardLoopback(t *testing.T) {
-	sPriv, sPub := keypair(t)
-	cPriv, cPub := keypair(t)
+// peerDev and peerNet are what upstream wireguard-go and amneziawg-go share.
+type peerDev interface {
+	IpcSet(string) error
+	IpcGet() (string, error)
+	Up() error
+	Close()
+}
 
-	stun, snet, err := netstack.CreateNetTUN([]netip.Addr{netip.MustParseAddr("10.9.0.1")}, nil, 1420)
-	if err != nil {
+type peerNet interface {
+	ListenTCPAddrPort(netip.AddrPort) (*gonet.TCPListener, error)
+	ListenUDPAddrPort(netip.AddrPort) (*gonet.UDPConn, error)
+}
+
+// echoPeer starts an in-process WireGuard server at 10.9.0.1 with TCP and UDP echo
+// on :7, and returns its UDP port. awg is extra device UAPI; non-empty runs the
+// server on amneziawg-go, empty on upstream wireguard-go (plain-WireGuard interop).
+func echoPeer(t *testing.T, sPriv, cPub []byte, awg string) string {
+	addrs := []netip.Addr{netip.MustParseAddr("10.9.0.1")}
+	var (
+		srv  peerDev
+		snet peerNet
+	)
+	if awg == "" {
+		stun, n, err := netstack.CreateNetTUN(addrs, nil, 1420)
+		if err != nil {
+			t.Fatal(err)
+		}
+		srv, snet = device.NewDevice(stun, conn.NewDefaultBind(), device.NewLogger(device.LogLevelSilent, "")), n
+	} else {
+		stun, n, err := awgnet.CreateNetTUN(addrs, nil, 1420)
+		if err != nil {
+			t.Fatal(err)
+		}
+		srv, snet = awgdev.NewDevice(stun, awgconn.NewDefaultBind(), awgdev.NewLogger(awgdev.LogLevelSilent, "")), n
+	}
+	t.Cleanup(srv.Close)
+	if err := srv.IpcSet(fmt.Sprintf("private_key=%s\nlisten_port=0\n%spublic_key=%s\nallowed_ip=10.9.0.2/32\n",
+		hex.EncodeToString(sPriv), awg, hex.EncodeToString(cPub))); err != nil {
 		t.Fatal(err)
 	}
-	srv := device.NewDevice(stun, conn.NewDefaultBind(), device.NewLogger(device.LogLevelSilent, ""))
-	defer srv.Close()
-	if err := srv.IpcSet(fmt.Sprintf("private_key=%s\nlisten_port=0\npublic_key=%s\nallowed_ip=10.9.0.2/32\n",
-		hex.EncodeToString(sPriv), hex.EncodeToString(cPub))); err != nil {
+	if err := srv.Up(); err != nil {
 		t.Fatal(err)
 	}
-	srv.Up()
 	st, _ := srv.IpcGet()
 	var port string
 	for _, l := range strings.Split(st, "\n") {
@@ -107,7 +141,6 @@ func TestWireGuardLoopback(t *testing.T) {
 		}
 	}
 
-	// TCP and UDP echo servers inside the "remote" network.
 	l, err := snet.ListenTCPAddrPort(netip.MustParseAddrPort("10.9.0.1:7"))
 	if err != nil {
 		t.Fatal(err)
@@ -135,9 +168,28 @@ func TestWireGuardLoopback(t *testing.T) {
 			u.WriteTo(b[:n], a)
 		}
 	}()
+	return port
+}
 
-	conf := fmt.Sprintf("[Interface]\nPrivateKey=%s\nAddress=10.9.0.2/32\n[Peer]\nPublicKey=%s\nEndpoint=127.0.0.1:%s\nAllowedIPs=10.9.0.0/24\n",
-		b64(cPriv), b64(sPub), port)
+// TestWireGuardLoopback runs a real handshake against an in-process peer and
+// pushes TCP and UDP through the tunnel: once against plain WireGuard, once with
+// AmneziaWG obfuscation on both ends.
+func TestWireGuardLoopback(t *testing.T) {
+	for _, tc := range []struct{ name, iface string }{
+		{"wireguard", ""},
+		{"amneziawg", "Jc=4\nJmin=40\nJmax=70\nS1=15\nS2=18\nH1=123456\nH2=234567\nH3=345678\nH4=456789\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) { loopback(t, tc.iface) })
+	}
+}
+
+func loopback(t *testing.T, iface string) {
+	sPriv, sPub := keypair(t)
+	cPriv, cPub := keypair(t)
+	port := echoPeer(t, sPriv, cPub, strings.ToLower(iface))
+
+	conf := fmt.Sprintf("[Interface]\nPrivateKey=%s\nAddress=10.9.0.2/32\n%s[Peer]\nPublicKey=%s\nEndpoint=127.0.0.1:%s\nAllowedIPs=10.9.0.0/24\n",
+		b64(cPriv), iface, b64(sPub), port)
 	if WgHandshakeAge() != -2 {
 		t.Fatal("want -2 before start")
 	}
