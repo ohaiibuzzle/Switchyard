@@ -82,14 +82,17 @@ fun App(s: Settings) {
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     val tabState = rememberSaveableStateHolder() // keeps each tab's scroll position across tab switches
     val open = { p: Page -> page = p }
-    // Bar on phones, rail on tablets; hidden on sub-pages, which have a back arrow instead.
-    val navType = if (page != null) NavigationSuiteType.None
-        else NavigationSuiteScaffoldDefaults.navigationSuiteType(currentWindowAdaptiveInfoV2())
+    // Bar on phones, rail on tablets. Sub-pages hide the bar (they have a back arrow) but keep the rail,
+    // so wide layouts don't jump sideways.
+    val auto = NavigationSuiteScaffoldDefaults.navigationSuiteType(currentWindowAdaptiveInfoV2())
+    val isBar = auto == NavigationSuiteType.NavigationBar ||
+        auto == NavigationSuiteType.ShortNavigationBarCompact || auto == NavigationSuiteType.ShortNavigationBarMedium
+    val navType = if (page != null && isBar) NavigationSuiteType.None else auto
     NavigationSuiteScaffold(
         navigationItems = {
             Tab.entries.forEach { t ->
                 NavigationSuiteItem(
-                    selected = tab == t, onClick = { tab = t },
+                    selected = tab == t, onClick = { tab = t; page = null },
                     icon = { Icon(t.icon, null) }, label = { Text(t.label) },
                     navigationSuiteType = navType,
                 )
@@ -106,7 +109,11 @@ fun App(s: Settings) {
                     if (p != null) TopAppBar(
                         title = { Text(p.title) },
                         navigationIcon = { IconButton({ page = null }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
-                    ) else LargeTopAppBar(title = { Text(tab.title) }, scrollBehavior = scroll)
+                    ) else LargeTopAppBar(
+                        title = { Text(tab.title) }, scrollBehavior = scroll,
+                        // Flat when collapsed: a tinted bar only spans the capped column and leaves a seam by the rail.
+                        colors = TopAppBarDefaults.topAppBarColors(scrolledContainerColor = MaterialTheme.colorScheme.surface),
+                    )
                 },
             ) { pad ->
                 Box(Modifier.padding(pad).fillMaxSize()) {
