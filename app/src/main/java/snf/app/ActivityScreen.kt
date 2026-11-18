@@ -149,6 +149,7 @@ fun ActivityScreen(s: Settings) {
                 supportingContent = {
                     Text(listOfNotNull(app.label, e.dst.takeIf { e.host != null }, reasonText(e), e.err).joinToString(" · "))
                 },
+                colors = rowColors,
             )
             HorizontalDivider()
             e.host?.let(::domainRule)?.let { DomainRule(s, it) } // null when the "host" is an IP
@@ -188,5 +189,6 @@ private fun DomainRule(s: Settings, h: String) {
 private fun SheetAction(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, onClick: () -> Unit) = ListItem(
     headlineContent = { Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis) },
     leadingContent = { Icon(icon, null) },
+    colors = rowColors,
     modifier = Modifier.clickable(onClick = onClick),
 )

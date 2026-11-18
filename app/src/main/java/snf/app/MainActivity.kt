@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.window.core.layout.WindowSizeClass
 
@@ -100,7 +101,7 @@ fun App(s: Settings) {
             Tab.entries.forEach { t ->
                 NavigationSuiteItem(
                     selected = tab == t, onClick = { tab = t; page = null },
-                    icon = { Icon(t.icon, null) }, label = { Text(t.label) },
+                    icon = { Icon(t.icon, null) }, label = { Text(t.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     navigationSuiteType = navType,
                 )
             }
