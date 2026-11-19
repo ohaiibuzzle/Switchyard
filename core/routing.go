@@ -21,10 +21,13 @@ type config struct {
 	BlockedUIDs  []int    `json:"blockedUids"`
 	Blocklists   []string `json:"blocklists"` // file paths; empty = ad-block off
 	BlockBypass  bool     `json:"blockBypass"`
-	SNISplit     bool     `json:"sniSplit"`
+	TLSMethod    string   `json:"tlsMethod"` // how the first half of a split ClientHello goes out: "", split, disorder, oob, disoob
 	TLSFrag      bool     `json:"tlsFrag"`
 	HostTricks   bool     `json:"hostTricks"`
 	BlockQUIC    bool     `json:"blockQuic"`
+	DropSACK     bool     `json:"dropSack"` // ignore the server's SACKs until it first answers
+	FakeQUIC     bool     `json:"fakeQuic"` // a low-TTL decoy before a QUIC flow's first packet
+	FakeTTL      int      `json:"fakeTtl"`  // the app sends it (default 8, byedpi's)
 	ProxyURL     string   `json:"proxyUrl"` // socks5://[user:pass@]host:port or http://host:port
 	WGConf       string   `json:"wgConf"`   // wg-quick config text; takes precedence over ProxyURL
 	RouteAll     bool     `json:"routeAll"` // every app goes via WireGuard/proxy/exit node; else only RouteUIDs

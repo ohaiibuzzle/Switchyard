@@ -55,17 +55,17 @@ func recordLen(b []byte) int {
 	return 5 + int(binary.BigEndian.Uint16(b[3:5]))
 }
 
-// desyncTLS turns one ClientHello record into the chunks to write, each
-// sent as its own TCP segment. Bytes after the first record pass through.
-func desyncTLS(b []byte, split, frag bool) [][]byte {
+// desyncTLS cuts one ClientHello inside its SNI into head and tail, each sent as
+// its own TCP segment; tail is nil when there's no cut. Bytes after the first record ride in tail.
+func desyncTLS(b []byte, split, frag bool) (head, tail []byte) {
 	off, n, ok := sniOffset(b)
 	if !ok || (!split && !frag) {
-		return [][]byte{b}
+		return b, nil
 	}
 	mid := off + n/2 // cut inside the hostname so no segment/record holds it whole
 	end := recordLen(b)
 	if !frag {
-		return [][]byte{b[:mid], b[mid:]}
+		return b[:mid], b[mid:]
 	}
 	rec := func(payload []byte) []byte {
 		h := []byte{0x16, b[1], b[2], 0, 0}
@@ -74,19 +74,19 @@ func desyncTLS(b []byte, split, frag bool) [][]byte {
 	}
 	r1, r2 := rec(b[5:mid]), append(rec(b[mid:end]), b[end:]...)
 	if split {
-		return [][]byte{r1, r2}
+		return r1, r2
 	}
-	return [][]byte{append(r1, r2...)}
+	return append(r1, r2...), nil
 }
 
 var hostHdr = []byte("\r\nhost:")
 
 // desyncHTTP mixes the Host header's case, drops the space after the colon and
-// splits the write inside the hostname. Non-HTTP or Host-less data passes through.
-func desyncHTTP(b []byte) [][]byte {
+// cuts it inside the hostname. Non-HTTP or Host-less data passes through whole.
+func desyncHTTP(b []byte) (head, tail []byte) {
 	i := bytes.Index(bytes.ToLower(b), hostHdr)
 	if i < 0 {
-		return [][]byte{b}
+		return b, nil
 	}
 	out := append([]byte{}, b[:i]...)
 	out = append(out, "\r\nhoSt:"...)
@@ -95,7 +95,7 @@ func desyncHTTP(b []byte) [][]byte {
 	cut := len(out) + min(bytes.IndexByte(rest, '\r'), len(rest))/2
 	out = append(out, rest...)
 	if cut <= len(out)-len(rest) { // empty host value
-		return [][]byte{out}
+		return out, nil
 	}
-	return [][]byte{out[:cut], out[cut:]}
+	return out[:cut], out[cut:]
 }

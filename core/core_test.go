@@ -61,18 +61,19 @@ func TestSNI(t *testing.T) {
 	trailer := []byte("extra")
 	in := append(append([]byte{}, ch...), trailer...)
 
-	sp := desyncTLS(in, true, false)
-	if len(sp) != 2 || !bytes.Equal(bytes.Join(sp, nil), in) || bytes.Contains(sp[0], []byte("blocked.example.com")) {
+	h, tl := desyncTLS(in, true, false)
+	if len(tl) == 0 || !bytes.Equal(append(h[:len(h):len(h)], tl...), in) || bytes.Contains(h, []byte("blocked.example.com")) {
 		t.Fatal("split must be lossless and cut the SNI")
 	}
 
-	fr := desyncTLS(in, true, true)
-	if len(fr) != 2 {
-		t.Fatal("frag+split wants 2 chunks")
+	h, tl = desyncTLS(in, true, true)
+	if len(tl) == 0 {
+		t.Fatal("frag+split wants a cut")
 	}
 	// Reassembling record payloads must give back the original handshake.
 	var payload []byte
-	rest := bytes.Join(fr, nil)
+	both := append(h[:len(h):len(h)], tl...)
+	rest := both
 	for i := 0; i < 2; i++ {
 		l := recordLen(rest)
 		payload = append(payload, rest[5:l]...)
@@ -81,25 +82,25 @@ func TestSNI(t *testing.T) {
 	if !bytes.Equal(payload, ch[5:]) || !bytes.Equal(rest, trailer) {
 		t.Fatal("fragmented records don't reassemble")
 	}
-	if got := desyncTLS(in, false, true); len(got) != 1 || !bytes.Equal(got[0], bytes.Join(fr, nil)) {
+	if got, tl := desyncTLS(in, false, true); tl != nil || !bytes.Equal(got, both) {
 		t.Fatal("frag-only should be one write of both records")
 	}
 }
 
 func TestHTTP(t *testing.T) {
 	in := []byte("GET / HTTP/1.1\r\nHost: blocked.com\r\nAccept: */*\r\n\r\n")
-	out := desyncHTTP(in)
-	if len(out) != 2 {
-		t.Fatalf("want 2 chunks, got %d", len(out))
+	h, tl := desyncHTTP(in)
+	if len(tl) == 0 {
+		t.Fatal("want a cut")
 	}
-	j := string(bytes.Join(out, nil))
+	j := string(h) + string(tl)
 	if j != "GET / HTTP/1.1\r\nhoSt:blocked.com\r\nAccept: */*\r\n\r\n" {
 		t.Fatalf("got %q", j)
 	}
-	if strings.Contains(string(out[0]), "blocked.com") {
+	if strings.Contains(string(h), "blocked.com") {
 		t.Fatal("hostname must be split")
 	}
-	if o := desyncHTTP([]byte("\x16\x03\x01junk")); len(o) != 1 {
+	if _, tl := desyncHTTP([]byte("\x16\x03\x01junk")); tl != nil {
 		t.Fatal("non-HTTP must pass through")
 	}
 }

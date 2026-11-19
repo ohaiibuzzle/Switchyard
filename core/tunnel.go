@@ -316,6 +316,9 @@ func forwardUDP(s *state, c *gonet.UDPConn, uid int, dst netip.AddrPort) {
 		return
 	}
 	defer out.Close()
+	if s.cfg.FakeQUIC && dst.Port() == 443 {
+		fakeUDP(out, s.cfg.FakeTTL) // the app's first datagram is already waiting, so this goes ahead of it
+	}
 	go func() {
 		b := make([]byte, 65535)
 		for {
@@ -344,25 +347,26 @@ func forwardTCP(s *state, c *gonet.TCPConn, out net.Conn, dst netip.AddrPort) {
 	defer out.Close()
 
 	// Server->client starts first so server-speaks-first protocols aren't stalled by firstFlight.
+	reply := replyReader(out, s.cfg.DropSACK && (dst.Port() == 443 || dst.Port() == 80))
 	done := make(chan struct{})
 	go func() {
-		io.Copy(c, out)
+		io.Copy(c, reply)
 		c.CloseWrite()
 		close(done)
 	}()
 
 	// Desync only touches the client's first flight; everything after is a plain copy.
-	var chunks [][]byte
+	var head, tail []byte
+	method := ""
 	switch {
-	case dst.Port() == 443 && (s.cfg.SNISplit || s.cfg.TLSFrag):
-		chunks = desyncTLS(firstFlight(c), s.cfg.SNISplit, s.cfg.TLSFrag)
+	case dst.Port() == 443 && (s.cfg.TLSMethod != "" || s.cfg.TLSFrag):
+		head, tail = desyncTLS(firstFlight(c), s.cfg.TLSMethod != "", s.cfg.TLSFrag)
+		method = s.cfg.TLSMethod
 	case dst.Port() == 80 && s.cfg.HostTricks:
-		chunks = desyncHTTP(firstFlight(c))
+		head, tail = desyncHTTP(firstFlight(c))
 	}
-	for _, ch := range chunks {
-		if _, err := out.Write(ch); err != nil {
-			return
-		}
+	if len(head) > 0 && writeFirstFlight(out, head, tail, method) != nil {
+		return
 	}
 	io.Copy(out, c)
 	if tc, ok := out.(interface{ CloseWrite() error }); ok {

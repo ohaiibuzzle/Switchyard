@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.AltRoute
@@ -29,6 +30,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
@@ -101,6 +103,24 @@ fun Hint(text: String) = Text(
     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
 )
 
+/** A read-only field that opens a menu of [options], each shown as [name]. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun <T> DropdownField(
+    label: String, value: T, options: List<T>, name: (T) -> String,
+    modifier: Modifier = Modifier, sub: String? = null, onPick: (T) -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(open, { open = it }, modifier) {
+        OutlinedTextField(name(value), {}, Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
+            readOnly = true, label = { Text(label) }, singleLine = true, supportingText = sub?.let { { Text(it) } },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(open) })
+        ExposedDropdownMenu(open, { open = false }) {
+            options.forEach { o -> DropdownMenuItem({ Text(name(o)) }, { onPick(o); open = false }) }
+        }
+    }
+}
+
 // ---- Screens ----
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -112,7 +132,6 @@ fun DnsScreen(s: Settings) {
     var proto by remember(saved) { mutableStateOf(dnsProto(saved) ?: DNS_PROTOS[0]) }
     var host by remember(saved) { mutableStateOf(saved.substringAfter("://")) }
     var boot by remember(saved) { mutableStateOf(s.dnsBootstrap) }
-    var protoMenu by remember { mutableStateOf(false) }
     ScreenColumn {
         if (s.tsOn) Group {
             SwitchRow(Icons.Rounded.Hub, "Use Tailscale DNS", "Your tailnet answers first; the provider below covers the rest", s.tsDns) { v ->
@@ -139,16 +158,7 @@ fun DnsScreen(s: Settings) {
                 modifier = Modifier.selectable(custom, role = Role.RadioButton) { custom = true },
             )
             if (custom) Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                ExposedDropdownMenuBox(protoMenu, { protoMenu = it }) {
-                    OutlinedTextField(proto.name, {}, Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
-                        readOnly = true, label = { Text("Protocol") }, singleLine = true,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(protoMenu) })
-                    ExposedDropdownMenu(protoMenu, { protoMenu = false }) {
-                        DNS_PROTOS.forEach { p ->
-                            DropdownMenuItem({ Text(p.name) }, { proto = p; protoMenu = false })
-                        }
-                    }
-                }
+                DropdownField("Protocol", proto, DNS_PROTOS, { it.name }) { proto = it }
                 OutlinedTextField(host, { v ->
                     // A pasted full URL picks its own protocol.
                     val t = v.trim()
@@ -339,12 +349,27 @@ fun PrivacyScreen(s: Settings, open: (Page) -> Unit) {
     }
 }
 
+private class TlsMethod(val key: String, val name: String, val sub: String)
+
+private val TLS_METHODS = listOf(
+    TlsMethod("split", "Split", "Cuts the site name in two"),
+    TlsMethod("disorder", "Disorder", "Sends the first piece last"),
+    TlsMethod("oob", "Out-of-band", "Adds a byte only filters see"),
+    TlsMethod("disoob", "Disorder + out-of-band", "Both of the above"),
+)
+
 @Composable
 fun DisguiseScreen(s: Settings) {
     ScreenColumn {
         Group {
-            SwitchRow(Icons.Rounded.Lock, "Hide site names in secure connections", checked = s.sniSplit) { v ->
-                s.sniSplit = v
+            SwitchRow(Icons.Rounded.Lock, "Hide site names in secure connections", checked = s.tlsMethod.isNotEmpty()) { v ->
+                s.tlsMethod = if (v) "split" else ""
+            }
+            if (s.tlsMethod.isNotEmpty()) {
+                val m = TLS_METHODS.find { it.key == s.tlsMethod } ?: TLS_METHODS[0]
+                DropdownField("Method", m, TLS_METHODS, { it.name }, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp), m.sub) {
+                    s.tlsMethod = it.key
+                }
             }
             SwitchRow(Icons.AutoMirrored.Rounded.CallSplit, "Fragment secure handshakes", checked = s.tlsFrag) { v ->
                 s.tlsFrag = v
@@ -355,6 +380,23 @@ fun DisguiseScreen(s: Settings) {
             SwitchRow(Icons.Rounded.Speed, "Turn off QUIC", "Lets the options above cover more apps", s.blockQuic) { v ->
                 s.blockQuic = v
             }
+            SwitchRow(Icons.Rounded.Shuffle, "Send fake QUIC packets", if (s.blockQuic) "No effect while QUIC is off" else null, s.fakeQuic) { v ->
+                s.fakeQuic = v
+            }
+            SwitchRow(Icons.Rounded.Replay, "Ignore selective ACKs", checked = s.dropSack) { v ->
+                s.dropSack = v
+            }
+        }
+        if (s.fakeQuic) Group("Fake packets") {
+            val saved = s.fakeTtl
+            var ttl by remember(saved) { mutableStateOf(saved.toString()) }
+            fun parse(t: String) = t.toIntOrNull()?.takeIf { it in 1..255 }
+            OutlinedTextField(ttl, { v ->
+                ttl = v.filter(Char::isDigit).take(3)
+                parse(ttl)?.let { s.fakeTtl = it }
+            }, Modifier.fillMaxWidth().padding(16.dp), label = { Text("TTL") }, isError = parse(ttl) == null,
+                supportingText = { Text("Must reach the filter but not the site") }, singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
         }
     }
 }

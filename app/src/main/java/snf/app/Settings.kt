@@ -109,6 +109,8 @@ class Settings private constructor(ctx: Context) {
             .putString("routeMode", prefs.getString("routeBeforeTs", "off")).remove("routeBeforeTs").apply()
         // An empty pick list used to mean every app; now that's its own switch.
         if (!prefs.contains("routeAll")) prefs.edit { putBoolean("routeAll", prefs.getStringSet("proxied", null).isNullOrEmpty()) }
+        // The SNI split switch became one choice of tlsMethod.
+        if (prefs.contains("sniSplit")) prefs.edit { putString("tlsMethod", if (prefs.getBoolean("sniSplit", false)) "split" else ""); remove("sniSplit") }
         prefs.registerOnSharedPreferenceChangeListener(onChange)
     }
 
@@ -121,6 +123,7 @@ class Settings private constructor(ctx: Context) {
             override fun setValue(thisRef: Any?, property: KProperty<*>, value: T) = write { put(value) }
         }
     private fun bool(k: String, def: Boolean = false) = pref({ getBoolean(k, def) }, { putBoolean(k, it) })
+    private fun int(k: String, def: Int) = pref({ getInt(k, def) }, { putInt(k, it) })
     private fun str(k: String, def: String = "") = pref({ getString(k, def)!! }, { putString(k, it) })
     private fun strs(k: String) = pref({ getStringSet(k, emptySet())!!.toSet() }, { putStringSet(k, it) })
     // Uids are stored as strings, as they always were.
@@ -139,10 +142,13 @@ class Settings private constructor(ctx: Context) {
     var bypassPkgs by strs(BYPASS); private set // packages kept out of the tun entirely; packages, since that's what Builder takes
     var adblock by bool("adblock")
     var lists by strs("lists")
-    var sniSplit by bool("sniSplit")
+    var tlsMethod by str("tlsMethod") // "", split, disorder, oob, disoob
     var tlsFrag by bool("tlsFrag")
     var hostTricks by bool("hostTricks")
     var blockQuic by bool("blockQuic")
+    var dropSack by bool("dropSack")
+    var fakeQuic by bool("fakeQuic")
+    var fakeTtl by int("fakeTtl", 8)
     var proxyUrl by str("proxyUrl")
     var wgActive by str("wgActive")
     var allowDomains by strs(ALLOW_RULES); private set // write through setRule
@@ -156,7 +162,7 @@ class Settings private constructor(ctx: Context) {
     var tsExitNode by str("tsExitNode") // Tailscale IP of the picked exit node
 
     /** How many traffic-disguise options are on. */
-    fun tricksOn() = listOf(sniSplit, tlsFrag, hostTricks, blockQuic).count { it }
+    fun tricksOn() = listOf(tlsMethod.isNotEmpty(), tlsFrag, hostTricks, blockQuic, dropSack, fakeQuic && !blockQuic).count { it }
 
     /** True when apps are routed one by one, so each app has its own switch. */
     val pickRoutes get() = routeMode != "off" && !routeAll
@@ -229,10 +235,13 @@ class Settings private constructor(ctx: Context) {
         put("blockedUids", JSONArray(blockedUids.toList()))
         put("blocklists", JSONArray(if (adblock) lists.map { listFile(it).path }.filter { File(it).exists() } else emptyList()))
         put("blockBypass", blockBypass)
-        put("sniSplit", sniSplit)
+        put("tlsMethod", tlsMethod)
         put("tlsFrag", tlsFrag)
         put("hostTricks", hostTricks)
         put("blockQuic", blockQuic)
+        put("dropSack", dropSack)
+        put("fakeQuic", fakeQuic)
+        put("fakeTtl", fakeTtl)
         put("proxyUrl", if (routeMode == "proxy") proxyUrl else "")
         put("wgConf", if (routeMode == "wg") activeWg()?.conf.orEmpty() else "")
         put("routeAll", routeAll)
