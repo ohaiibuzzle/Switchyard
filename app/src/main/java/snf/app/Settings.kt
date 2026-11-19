@@ -146,7 +146,6 @@ class Settings private constructor(ctx: Context) {
     var tlsFrag by bool("tlsFrag")
     var hostTricks by bool("hostTricks")
     var blockQuic by bool("blockQuic")
-    var dropSack by bool("dropSack")
     var fakeQuic by bool("fakeQuic")
     var fakeTtl by int("fakeTtl", 8)
     var proxyUrl by str("proxyUrl")
@@ -162,7 +161,7 @@ class Settings private constructor(ctx: Context) {
     var tsExitNode by str("tsExitNode") // Tailscale IP of the picked exit node
 
     /** How many traffic-disguise options are on. */
-    fun tricksOn() = listOf(tlsMethod.isNotEmpty(), tlsFrag, hostTricks, blockQuic, dropSack, fakeQuic && !blockQuic).count { it }
+    fun tricksOn() = listOf(tlsMethod.isNotEmpty(), tlsFrag, hostTricks, blockQuic, fakeQuic && !blockQuic).count { it }
 
     /** True when apps are routed one by one, so each app has its own switch. */
     val pickRoutes get() = routeMode != "off" && !routeAll
@@ -239,7 +238,6 @@ class Settings private constructor(ctx: Context) {
         put("tlsFrag", tlsFrag)
         put("hostTricks", hostTricks)
         put("blockQuic", blockQuic)
-        put("dropSack", dropSack)
         put("fakeQuic", fakeQuic)
         put("fakeTtl", fakeTtl)
         put("proxyUrl", if (routeMode == "proxy") proxyUrl else "")

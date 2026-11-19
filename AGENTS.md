@@ -9,7 +9,7 @@ What the app does:
 - **Secure DNS for every app.** Every query on port 53, to any IP, is answered by us and forwarded over DoH, DoT or DoQ. DoT/DoQ (:853), DoH to well-known resolver IPs, and lookups of public DoH hostnames are blocked, so apps can't bypass it.
 - **Per-app firewall.** Each flow is matched to its app (UID), and blocked apps get a RST or a dropped packet.
 - **Ad blocking.** Domain lists (hosts, plain domains or adblock `||x^`) are downloaded and matched on the device. Blocked names get NXDOMAIN.
-- **Anti-censorship.** Optional tricks: split the TLS ClientHello inside the SNI (plain, disorder, out-of-band or both, after byedpi), fragment the TLS record, mangle the HTTP Host header, ignore SACKs during the first flight, send a low-TTL fake before QUIC, block QUIC.
+- **Anti-censorship.** Optional tricks: split the TLS ClientHello inside the SNI (plain, disorder, out-of-band or both, after byedpi), fragment the TLS record, mangle the HTTP Host header, send a low-TTL fake before QUIC, block QUIC.
 - **Activity log and custom rules.** An optional in-memory log records each decision (app, domain, IP, allow/block, and why). Your own domain allow/block rules and IP/CIDR block rules can be added straight from a log entry.
 - **Optional upstream.** Traffic can go through a SOCKS5 or HTTP CONNECT proxy (TCP only), or through userspace WireGuard or AmneziaWG (TCP and UDP). Saved WireGuard profiles can be switched live.
 - **Tailscale.** An embedded tsnet node reaches tailnet IPs (100.64.0.0/10, fd7a:115c:a1e0::/48) for every app. It's its own switch: tailnet IPs go to Tailscale first, everything else follows the route mode, so it works alongside WireGuard or a proxy. Route mode "exit" sends the routed apps' internet through a Tailscale exit node instead; `tsNode.dial` refuses anything tsnet has no Tailscale route for, so a missing or offline exit node fails closed rather than going direct. Optional "Tailscale DNS" asks the tailnet's resolver first and falls back to the chosen provider.
@@ -25,7 +25,7 @@ core/                 Go engine, bound to Java with gomobile -> app/libs/core.aa
   tailscale.go        tsnet node (tsFor), tailnet routing, Tailscale DNS with fallback, TsStatus/TsPeers/TsLogin/TsLogout
   blocklist.go        domainSet: list parsing + suffix lookup; prefixSet: your IP/CIDR rules (splitRules, IPRule)
   desync.go           SNI split, TLS record fragmentation, HTTP Host tricks (pure byte functions)
-  desync_linux.go     socket tricks: TTL-1 disorder, MSG_OOB, SACK-dropping BPF, fake UDP (unprivileged; direct sockets only)
+  desync_linux.go     socket tricks: TTL-1 disorder, MSG_OOB, fake UDP (unprivileged; direct sockets only)
   dialer.go           direct / SOCKS5 / HTTP CONNECT dialers
   routes.go           RoutesExcluding: tun routes minus the local network
   bypass.go           known DoH/DoT hostnames and resolver IPs

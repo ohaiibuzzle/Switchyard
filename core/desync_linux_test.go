@@ -31,9 +31,6 @@ func TestSendFirst(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, ok := replyReader(c, true).(*sackReader); !ok || !setDropSACK(c.(*net.TCPConn), false) {
-			t.Errorf("%q: drop SACK filter didn't attach/detach", m)
-		}
 		if err := writeFirstFlight(c, []byte("hello "), []byte("world"), m); err != nil {
 			t.Fatalf("%q: %v", m, err)
 		}

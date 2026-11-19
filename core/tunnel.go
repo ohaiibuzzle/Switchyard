@@ -347,10 +347,9 @@ func forwardTCP(s *state, c *gonet.TCPConn, out net.Conn, dst netip.AddrPort) {
 	defer out.Close()
 
 	// Server->client starts first so server-speaks-first protocols aren't stalled by firstFlight.
-	reply := replyReader(out, s.cfg.DropSACK && (dst.Port() == 443 || dst.Port() == 80))
 	done := make(chan struct{})
 	go func() {
-		io.Copy(c, reply)
+		io.Copy(c, out)
 		c.CloseWrite()
 		close(done)
 	}()

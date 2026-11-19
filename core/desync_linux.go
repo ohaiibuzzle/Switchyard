@@ -113,62 +113,6 @@ func waitSent(rc syscall.RawConn) {
 	}
 }
 
-// sackFilter is byedpi's socket filter: drop incoming segments whose options carry
-// SACK (kind 5 at byte 34, after NOP NOP timestamp NOP NOP), accept the rest.
-var sackFilter = []unix.SockFilter{
-	{Code: 0x30, K: 12},         // ldb [12]: data offset
-	{Code: 0x74, K: 4},          // rsh #4
-	{Code: 0x35, Jf: 3, K: 11},  // header >= 44 bytes?
-	{Code: 0x30, K: 34},         // ldb [34]
-	{Code: 0x15, Jf: 1, K: 5},   // SACK?
-	{Code: 0x06, K: 0},          // drop
-	{Code: 0x06, K: 0x00040000}, // accept
-}
-
-// replyReader is the server side of a flow. With drop, the server's SACKs are
-// ignored until its first reply, as byedpi does; otherwise it's out itself.
-func replyReader(out net.Conn, drop bool) io.Reader {
-	tc, ok := out.(*net.TCPConn)
-	if !drop || !ok || !setDropSACK(tc, true) {
-		return out
-	}
-	return &sackReader{tc: tc}
-}
-
-// sackReader detaches sackFilter after the first read. Not embedding the conn
-// keeps io.Copy from going around Read through *net.TCPConn's WriteTo.
-type sackReader struct {
-	tc       *net.TCPConn
-	detached bool
-}
-
-func (r *sackReader) Read(b []byte) (int, error) {
-	n, err := r.tc.Read(b)
-	if !r.detached {
-		r.detached = true
-		setDropSACK(r.tc, false)
-	}
-	return n, err
-}
-
-// setDropSACK attaches or detaches sackFilter.
-func setDropSACK(tc *net.TCPConn, on bool) bool {
-	rc, err := tc.SyscallConn()
-	if err != nil {
-		return false
-	}
-	var serr error
-	rc.Control(func(fd uintptr) {
-		if on {
-			serr = unix.SetsockoptSockFprog(int(fd), unix.SOL_SOCKET, unix.SO_ATTACH_FILTER,
-				&unix.SockFprog{Len: uint16(len(sackFilter)), Filter: &sackFilter[0]})
-		} else {
-			serr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_DETACH_FILTER, 0)
-		}
-	})
-	return serr == nil
-}
-
 // fakeUDP sends byedpi's default decoy, 64 zero bytes, at a TTL meant to reach
 // the DPI box but not the server. An invalid ttl (0) just sends nothing.
 func fakeUDP(out net.Conn, ttl int) {

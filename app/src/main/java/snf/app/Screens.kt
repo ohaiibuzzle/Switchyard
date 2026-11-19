@@ -383,9 +383,6 @@ fun DisguiseScreen(s: Settings) {
             SwitchRow(Icons.Rounded.Shuffle, "Send fake QUIC packets", if (s.blockQuic) "No effect while QUIC is off" else null, s.fakeQuic) { v ->
                 s.fakeQuic = v
             }
-            SwitchRow(Icons.Rounded.Replay, "Ignore selective ACKs", checked = s.dropSack) { v ->
-                s.dropSack = v
-            }
         }
         if (s.fakeQuic) Group("Fake packets") {
             val saved = s.fakeTtl
