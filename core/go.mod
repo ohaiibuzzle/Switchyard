@@ -4,6 +4,7 @@ go 1.27.4
 
 require (
 	github.com/AdguardTeam/dnsproxy v0.86.0
+	github.com/ameshkov/dnsstamps v1.0.3
 	github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20261116
 	github.com/miekg/dns v1.1.73
 	golang.org/x/crypto v0.59.0
@@ -20,7 +21,6 @@ require (
 	github.com/AdguardTeam/golibs v0.35.13 // indirect
 	github.com/akutz/memconn v0.1.0 // indirect
 	github.com/alexbrainman/sspi v0.0.0-20250919150558-7d374ff0d59e // indirect
-	github.com/ameshkov/dnsstamps v1.0.3 // indirect
 	github.com/coder/websocket v1.8.15 // indirect
 	github.com/creachadair/msync v0.10.1 // indirect
 	github.com/dblohm7/wingoes v0.0.0-20260526185140-fb298caac7ca // indirect

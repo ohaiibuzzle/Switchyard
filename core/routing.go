@@ -12,10 +12,11 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/dnsproxy/upstream"
+	"github.com/ameshkov/dnsstamps"
 )
 
 type config struct {
-	DNSUpstream  string   `json:"dnsUpstream"`  // https://, h3://, tls://, quic://
+	DNSUpstream  string   `json:"dnsUpstream"`  // https://, h3://, tls://, quic://, sdns://
 	DNSBootstrap []string `json:"dnsBootstrap"` // IPs of the upstream host; empty = resolve via 9.9.9.9
 	BlockedUIDs  []int    `json:"blockedUids"`
 	Blocklists   []string `json:"blocklists"` // file paths; empty = ad-block off
@@ -135,12 +136,34 @@ func dnsDecision(s *state, name string) string {
 	return ""
 }
 
+// encrypted rejects upstreams dnsproxy would happily speak in plaintext (udp://, tcp://, bare IPs).
+// sdns:// is DNSCrypt only; the other transports have their own schemes.
+func encrypted(addr string) error {
+	switch scheme, _, _ := strings.Cut(addr, "://"); scheme {
+	case "https", "h3", "tls", "quic":
+		return nil
+	case "sdns":
+		st, err := dnsstamps.NewServerStampFromString(addr)
+		if err != nil {
+			return err
+		}
+		if st.Proto != dnsstamps.StampProtoTypeDNSCrypt {
+			return fmt.Errorf("%s stamp is not DNSCrypt", st.Proto.String())
+		}
+		return nil
+	}
+	return fmt.Errorf("not an encrypted protocol")
+}
+
 func newState(js string) (*state, error) {
 	var c config
 	dec := json.NewDecoder(strings.NewReader(js))
 	dec.DisallowUnknownFields() // a key the app and engine disagree on is a bug, not a no-op
 	if err := dec.Decode(&c); err != nil {
 		return nil, fmt.Errorf("config: %w", err)
+	}
+	if err := encrypted(c.DNSUpstream); err != nil {
+		return nil, fmt.Errorf("upstream %q: %w", c.DNSUpstream, err)
 	}
 	opts := &upstream.Options{Timeout: 5 * time.Second, Logger: slog.New(slog.DiscardHandler)}
 	if len(c.DNSBootstrap) > 0 {

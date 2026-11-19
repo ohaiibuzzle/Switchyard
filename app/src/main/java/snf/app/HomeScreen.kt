@@ -67,13 +67,12 @@ fun HomeScreen(s: Settings, open: (Page) -> Unit, goTo: (Tab) -> Unit) {
             Icons.Rounded.Warning, "Turn off Android's Private DNS",
             "System Private DNS conflicts with this app and may cause loss of Internet access. Set it to Off or Automatic in system settings.",
         )
-        val preset = DNS_PRESETS.firstOrNull { it.url == s.dnsUrl }
         val privacy = listOfNotNull(
             if (s.tricksOn() > 0) "Disguise on" else null,
             if (s.routeMode != "off") routeSummary(s) else null,
         ).joinToString(" · ").ifEmpty { "Off" }
         Group {
-            val dns = (preset?.let { "${it.name} · ${dnsKind(it.url)}" } ?: "Custom server").let { if (s.tsOn && s.tsDns) "Tailscale, then $it" else it }
+            val dns = dnsLabel(s.dnsUrl).let { if (s.tsOn && s.tsDns) "Tailscale, then $it" else it }
             NavRow(Icons.Rounded.Dns, "Private DNS", dns) { goTo(Tab.Dns) }
             NavRow(Icons.Rounded.Apps, "App access", counts("All apps allowed", s.blockedUids.size to "blocked", s.bypassPkgs.size to "bypassed")) { goTo(Tab.Apps) }
             NavRow(Icons.Rounded.Block, "Ad blocking", adBlockSummary(s)) { open(Page.AdBlock) }

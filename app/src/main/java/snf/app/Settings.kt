@@ -24,13 +24,28 @@ val DNS_PRESETS = listOf(
     DnsPreset("Google", "https://dns.google/dns-query", "8.8.8.8,8.8.4.4"),
 )
 
+/** A secure transport core's upstream accepts, by URL scheme. */
+data class DnsProto(val scheme: String, val name: String, val hint: String, val stamp: Boolean = false)
+
+val DNS_PROTOS = listOf(
+    DnsProto("https", "DNS over HTTPS", "dns.example/dns-query"),
+    DnsProto("h3", "DNS over HTTP/3", "dns.example/dns-query"),
+    DnsProto("tls", "DNS over TLS", "dns.example"),
+    DnsProto("quic", "DNS over QUIC", "dns.example"),
+    DnsProto("sdns", "DNSCrypt", "DNSCrypt stamp", stamp = true), // opaque; carries its own IP
+)
+
+fun dnsProto(url: String) = DNS_PROTOS.find { it.scheme == url.substringBefore("://", "") }
+
 /** Human-readable transport name for a resolver URL. */
-fun dnsKind(url: String) = when (url.substringBefore("://")) {
-    "https" -> "DNS over HTTPS"
-    "h3" -> "DNS over HTTP/3"
-    "tls" -> "DNS over TLS"
-    "quic" -> "DNS over QUIC"
-    else -> "Custom"
+fun dnsKind(url: String) = dnsProto(url)?.name ?: "Custom"
+
+/** "Cloudflare · DNS over HTTPS", or "dns.example · DNS over TLS" for a custom resolver. */
+fun dnsLabel(url: String): String {
+    val p = dnsProto(url)
+    val name = DNS_PRESETS.find { it.url == url }?.name
+        ?: if (p != null && !p.stamp) url.substringAfter("://").substringBefore('/') else "Custom"
+    return "$name · ${dnsKind(url)}"
 }
 
 data class WgProfile(val name: String, val conf: String) {

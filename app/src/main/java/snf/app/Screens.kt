@@ -103,13 +103,16 @@ fun Hint(text: String) = Text(
 
 // ---- Screens ----
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DnsScreen(s: Settings) {
     val saved = s.dnsUrl
     // Keyed on the saved server so picking a preset or saving refreshes the form.
     var custom by remember(saved) { mutableStateOf(DNS_PRESETS.none { it.url == saved }) }
-    var url by remember(saved) { mutableStateOf(saved) }
+    var proto by remember(saved) { mutableStateOf(dnsProto(saved) ?: DNS_PROTOS[0]) }
+    var host by remember(saved) { mutableStateOf(saved.substringAfter("://")) }
     var boot by remember(saved) { mutableStateOf(s.dnsBootstrap) }
+    var protoMenu by remember { mutableStateOf(false) }
     ScreenColumn {
         if (s.tsOn) Group {
             SwitchRow(Icons.Rounded.Hub, "Use Tailscale DNS", "Your tailnet answers first; the provider below covers the rest", s.tsDns) { v ->
@@ -136,11 +139,26 @@ fun DnsScreen(s: Settings) {
                 modifier = Modifier.selectable(custom, role = Role.RadioButton) { custom = true },
             )
             if (custom) Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(url, { url = it }, Modifier.fillMaxWidth(), label = { Text("Server address") },
-                    placeholder = { Text("https://, tls:// or quic://") }, singleLine = true)
-                OutlinedTextField(boot, { boot = it }, Modifier.fillMaxWidth(), label = { Text("Server IPs (optional)") },
+                ExposedDropdownMenuBox(protoMenu, { protoMenu = it }) {
+                    OutlinedTextField(proto.name, {}, Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
+                        readOnly = true, label = { Text("Protocol") }, singleLine = true,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(protoMenu) })
+                    ExposedDropdownMenu(protoMenu, { protoMenu = false }) {
+                        DNS_PROTOS.forEach { p ->
+                            DropdownMenuItem({ Text(p.name) }, { proto = p; protoMenu = false })
+                        }
+                    }
+                }
+                OutlinedTextField(host, { v ->
+                    // A pasted full URL picks its own protocol.
+                    val t = v.trim()
+                    val p = dnsProto(t)
+                    if (p != null) { proto = p; host = t.substringAfter("://") } else host = v
+                }, Modifier.fillMaxWidth(), label = { Text("Server address") },
+                    placeholder = { Text(proto.hint) }, prefix = { Text("${proto.scheme}://") }, singleLine = true)
+                if (!proto.stamp) OutlinedTextField(boot, { boot = it }, Modifier.fillMaxWidth(), label = { Text("Server IPs (optional)") },
                     placeholder = { Text("1.2.3.4, 5.6.7.8") }, singleLine = true)
-                FilledTonalButton({ s.setDns(url.trim(), boot.trim()) }) { Text("Save") }
+                FilledTonalButton({ s.setDns("${proto.scheme}://${host.trim()}", if (proto.stamp) "" else boot.trim()) }) { Text("Save") }
             }
         }
         Group("Protection") {
