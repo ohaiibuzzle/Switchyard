@@ -16,7 +16,9 @@ It works by acting as a local VPN, so every app's traffic passes through it firs
 
 ## Getting started
 
-1. Install the APK.
+1. Install the APK from [Releases](https://github.com/ohaiibuzzle/Switchyard/releases). If you prefer to get updates automatically, use Obtainium:
+
+   [<img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" alt="Get it on Obtainium" height="54">](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/ohaiibuzzle/Switchyard)
 2. Open the app and tap the big power button. Android will ask you to allow a VPN; say yes.
 3. If the app asks to run in the background, tap the notice and allow it. Otherwise Android may stop the filter to save battery.
 
