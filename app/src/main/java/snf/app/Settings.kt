@@ -142,7 +142,7 @@ class Settings private constructor(ctx: Context) {
     var bypassPkgs by strs(BYPASS); private set // packages kept out of the tun entirely; packages, since that's what Builder takes
     var adblock by bool("adblock")
     var lists by strs("lists")
-    var tlsMethod by str("tlsMethod") // "", split, disorder, oob, disoob
+    var tlsMethod by str("tlsMethod") // "", split, disorder, oob, disoob, fake
     var tlsFrag by bool("tlsFrag")
     var hostTricks by bool("hostTricks")
     var blockQuic by bool("blockQuic")

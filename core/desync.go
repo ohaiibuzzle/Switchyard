@@ -2,8 +2,57 @@ package core
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/binary"
+	"io"
+	"net"
+	"sync"
 )
+
+// sendPlan is how the head of a cut first flight goes out; the zero value is a plain write.
+type sendPlan struct {
+	ttl   int    // >0: head goes out at this TTL, dies before the server, and the kernel resends it after the tail
+	oob   bool   // plus one urgent junk byte the server drops (out-of-band)
+	decoy []byte // sent in head's place, then swapped for the real bytes before the resend (fake)
+}
+
+func (p sendPlan) plain() bool { return p.ttl == 0 && !p.oob }
+
+// planFor turns the TLS method into a sendPlan; "split" and unknown names send plainly.
+func planFor(c config) sendPlan {
+	switch c.TLSMethod {
+	case "disorder":
+		return sendPlan{ttl: 1}
+	case "oob":
+		return sendPlan{oob: true}
+	case "disoob":
+		return sendPlan{ttl: 1, oob: true}
+	case "fake":
+		if d := fakeHello(); d != nil {
+			return sendPlan{ttl: c.FakeTTL, decoy: d} // newState keeps FakeTTL in 1..255
+		}
+	}
+	return sendPlan{}
+}
+
+// shortcut: fixed decoy name (byedpi's default), add a setting if a network blocks it.
+var fakeHello = sync.OnceValue(func() []byte { return clientHello("www.iana.org") })
+
+// clientHello captures the ClientHello record crypto/tls sends for sni, or nil.
+func clientHello(sni string) []byte {
+	a, b := net.Pipe()
+	defer a.Close()
+	go tls.Client(a, &tls.Config{ServerName: sni}).Handshake()
+	hdr := make([]byte, 5)
+	if _, err := io.ReadFull(b, hdr); err != nil {
+		return nil
+	}
+	body := make([]byte, recordLen(hdr)-5)
+	if _, err := io.ReadFull(b, body); err != nil {
+		return nil
+	}
+	return append(hdr, body...)
+}
 
 // sniOffset returns the offset and length of the SNI hostname inside a TLS
 // ClientHello record, or ok=false if b isn't a complete parseable ClientHello.

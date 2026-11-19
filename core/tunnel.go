@@ -356,15 +356,15 @@ func forwardTCP(s *state, c *gonet.TCPConn, out net.Conn, dst netip.AddrPort) {
 
 	// Desync only touches the client's first flight; everything after is a plain copy.
 	var head, tail []byte
-	method := ""
+	var plan sendPlan
 	switch {
 	case dst.Port() == 443 && (s.cfg.TLSMethod != "" || s.cfg.TLSFrag):
 		head, tail = desyncTLS(firstFlight(c), s.cfg.TLSMethod != "", s.cfg.TLSFrag)
-		method = s.cfg.TLSMethod
+		plan = s.tlsPlan
 	case dst.Port() == 80 && s.cfg.HostTricks:
 		head, tail = desyncHTTP(firstFlight(c))
 	}
-	if len(head) > 0 && writeFirstFlight(out, head, tail, method) != nil {
+	if len(head) > 0 && writeFirstFlight(out, head, tail, plan) != nil {
 		return
 	}
 	io.Copy(out, c)

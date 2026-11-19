@@ -3,7 +3,6 @@ package core
 import (
 	"bufio"
 	"bytes"
-	"crypto/tls"
 	"io"
 	"net"
 	"net/http"
@@ -36,20 +35,23 @@ plain.com # trailing comment
 	}
 }
 
-// clientHello captures a real ClientHello from crypto/tls.
-func clientHello(t *testing.T, sni string) []byte {
-	a, b := net.Pipe()
-	go tls.Client(a, &tls.Config{ServerName: sni}).Handshake()
-	hdr := make([]byte, 5)
-	io.ReadFull(b, hdr)
-	body := make([]byte, recordLen(hdr)-5)
-	io.ReadFull(b, body)
-	a.Close()
-	return append(hdr, body...)
+func TestPlanFor(t *testing.T) {
+	p := planFor(config{TLSMethod: "fake", FakeTTL: 5})
+	if off, n, ok := sniOffset(p.decoy); !ok || string(p.decoy[off:off+n]) != "www.iana.org" || p.ttl != 5 {
+		t.Fatalf("fake decoy must be a parseable www.iana.org hello at the fake TTL, ok=%v ttl=%d", ok, p.ttl)
+	}
+	for _, m := range []string{"", "split", "bogus"} {
+		if !planFor(config{TLSMethod: m}).plain() {
+			t.Errorf("%q must send plainly", m)
+		}
+	}
+	if p := planFor(config{TLSMethod: "disoob"}); p.ttl != 1 || !p.oob || p.decoy != nil {
+		t.Errorf("disoob = %+v", p)
+	}
 }
 
 func TestSNI(t *testing.T) {
-	ch := clientHello(t, "blocked.example.com")
+	ch := clientHello("blocked.example.com")
 	off, n, ok := sniOffset(ch)
 	if !ok || string(ch[off:off+n]) != "blocked.example.com" {
 		t.Fatalf("sniOffset: %v %q", ok, ch[off:off+n])

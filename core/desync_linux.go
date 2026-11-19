@@ -14,23 +14,13 @@ import (
 // Socket-level desync, after byedpi (github.com/hufrea/byedpi, desync.c). Plain
 // setsockopt/send flags, so no root. Only real sockets qualify: tunnels pass through.
 
-// sockMethod is how head goes out; "split" and unknown names are a plain write.
-type sockMethod struct{ ttl1, oob bool }
-
-var sockMethods = map[string]sockMethod{
-	"disorder": {ttl1: true},
-	"oob":      {oob: true},
-	"disoob":   {ttl1: true, oob: true},
-}
-
-// writeFirstFlight sends head the way method says, then tail. Without a cut
+// writeFirstFlight sends head the way p says, then tail. Without a cut
 // (empty tail) there's nothing to desync, so head goes out plain.
-func writeFirstFlight(out net.Conn, head, tail []byte, method string) error {
-	m, ok := sockMethods[method]
+func writeFirstFlight(out net.Conn, head, tail []byte, p sendPlan) error {
 	tc, isTCP := out.(*net.TCPConn)
 	var err error
-	if ok && isTCP && len(tail) > 0 {
-		err = sendDesynced(tc, head, m)
+	if !p.plain() && isTCP && len(tail) > 0 {
+		err = sendDesynced(tc, head, p)
 	} else {
 		_, err = out.Write(head)
 	}
@@ -40,27 +30,82 @@ func writeFirstFlight(out net.Conn, head, tail []byte, method string) error {
 	return err
 }
 
-func sendDesynced(tc *net.TCPConn, b []byte, m sockMethod) error {
+func sendDesynced(tc *net.TCPConn, b []byte, p sendPlan) error {
 	rc, err := tc.SyscallConn()
 	if err != nil {
 		return err
 	}
-	if m.ttl1 {
-		// TTL 1 dies at the first hop; the kernel resends it after the rest, at normal TTL.
-		if err := setTTL(rc, 1); err != nil {
+	if p.ttl > 0 {
+		// A low TTL dies before the server; the kernel resends it after the rest, at normal TTL.
+		if err := setTTL(rc, p.ttl); err != nil {
 			return err
 		}
 		defer setTTL(rc, -1)
 	}
-	if m.oob {
+	switch {
+	case p.decoy != nil:
+		return sendFake(rc, b, p.decoy) // waits itself, since the swap must follow the send
+	case p.oob:
 		err = sendOOB(rc, b)
-	} else {
+	default:
 		_, err = tc.Write(b)
 	}
 	if err == nil {
 		waitSent(rc) // TTL and segment boundaries hold only once it has left the socket
 	}
 	return err
+}
+
+// sendFake sends len(real) bytes of decoy (at the low TTL the caller set), then
+// rewrites them to real. splice hands the kernel our page rather than a copy, so
+// the resend that follows reads the real bytes from it.
+// shortcut: the rewrite races a NIC still holding the fake (byedpi takes the same
+// race), wait for the qdisc to drain too if fakes ever go out real.
+func sendFake(rc syscall.RawConn, real, decoy []byte) error {
+	page, err := unix.Mmap(-1, 0, len(real), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_PRIVATE|unix.MAP_ANONYMOUS)
+	if err != nil {
+		return err
+	}
+	defer unix.Munmap(page) // the kernel holds its own reference to the page
+	copy(page, decoy)       // a shorter decoy is zero-padded
+	var pipe [2]int
+	if err := unix.Pipe2(pipe[:], unix.O_CLOEXEC); err != nil {
+		return err
+	}
+	defer unix.Close(pipe[0])
+	defer unix.Close(pipe[1])
+	iov := unix.Iovec{Base: &page[0]}
+	iov.SetLen(len(page))
+	n, err := unix.Vmsplice(pipe[1], []unix.Iovec{iov}, unix.SPLICE_F_GIFT)
+	if err != nil {
+		return err
+	}
+	if n != len(page) {
+		return io.ErrShortWrite
+	}
+	var serr error
+	if err := rc.Write(func(fd uintptr) bool {
+		for n > 0 {
+			m, err := unix.Splice(pipe[0], nil, int(fd), nil, n, 0)
+			if err == unix.EAGAIN {
+				return false
+			}
+			if err != nil {
+				serr = err
+				return true
+			}
+			n -= int(m)
+		}
+		return true
+	}); err != nil {
+		return err
+	}
+	if serr != nil {
+		return serr
+	}
+	waitSent(rc)
+	copy(page, real)
+	return nil
 }
 
 // setTTL sets the unicast TTL / hop limit; -1 restores the system default.
@@ -114,7 +159,7 @@ func waitSent(rc syscall.RawConn) {
 }
 
 // fakeUDP sends byedpi's default decoy, 64 zero bytes, at a TTL meant to reach
-// the DPI box but not the server. An invalid ttl (0) just sends nothing.
+// the DPI box but not the server.
 func fakeUDP(out net.Conn, ttl int) {
 	uc, ok := out.(*net.UDPConn)
 	if !ok {

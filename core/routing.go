@@ -21,12 +21,12 @@ type config struct {
 	BlockedUIDs  []int    `json:"blockedUids"`
 	Blocklists   []string `json:"blocklists"` // file paths; empty = ad-block off
 	BlockBypass  bool     `json:"blockBypass"`
-	TLSMethod    string   `json:"tlsMethod"` // how the first half of a split ClientHello goes out: "", split, disorder, oob, disoob
+	TLSMethod    string   `json:"tlsMethod"` // how the first half of a split ClientHello goes out: "", split, disorder, oob, disoob, fake
 	TLSFrag      bool     `json:"tlsFrag"`
 	HostTricks   bool     `json:"hostTricks"`
 	BlockQUIC    bool     `json:"blockQuic"`
 	FakeQUIC     bool     `json:"fakeQuic"` // a low-TTL decoy before a QUIC flow's first packet
-	FakeTTL      int      `json:"fakeTtl"`  // the app sends it (default 8, byedpi's)
+	FakeTTL      int      `json:"fakeTtl"`  // for fake QUIC and the fake method; the app sends it (default 8, byedpi's)
 	ProxyURL     string   `json:"proxyUrl"` // socks5://[user:pass@]host:port or http://host:port
 	WGConf       string   `json:"wgConf"`   // wg-quick config text; takes precedence over ProxyURL
 	RouteAll     bool     `json:"routeAll"` // every app goes via WireGuard/proxy/exit node; else only RouteUIDs
@@ -57,6 +57,7 @@ type state struct {
 	blockIPs  prefixSet
 	up        upstream.Upstream
 	dial      dialFunc
+	tlsPlan   sendPlan // how a cut ClientHello's head goes out
 	wg        *wgTunnel
 	ts        *tsNode
 }
@@ -164,6 +165,9 @@ func newState(js string) (*state, error) {
 	if err := dec.Decode(&c); err != nil {
 		return nil, fmt.Errorf("config: %w", err)
 	}
+	if c.FakeTTL < 1 || c.FakeTTL > 255 {
+		c.FakeTTL = 8 // byedpi's default, as the app's
+	}
 	if err := encrypted(c.DNSUpstream); err != nil {
 		return nil, fmt.Errorf("upstream %q: %w", c.DNSUpstream, err)
 	}
@@ -217,5 +221,6 @@ func newState(js string) (*state, error) {
 	return &state{
 		cfg: c, blocked: set(c.BlockedUIDs), routed: set(c.RouteUIDs), blocklist: loadLists(c.Blocklists),
 		allow: domains(c.AllowDomains), block: block, blockIPs: blockIPs, up: up, dial: d, wg: wg, ts: ts,
+		tlsPlan: planFor(c),
 	}, nil
 }

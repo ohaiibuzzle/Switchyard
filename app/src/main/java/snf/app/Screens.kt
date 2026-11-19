@@ -356,6 +356,7 @@ private val TLS_METHODS = listOf(
     TlsMethod("disorder", "Disorder", "Sends the first piece last"),
     TlsMethod("oob", "Out-of-band", "Adds a byte only filters see"),
     TlsMethod("disoob", "Disorder + out-of-band", "Both of the above"),
+    TlsMethod("fake", "Fake", "Sends a decoy first; set its TTL below"),
 )
 
 @Composable
@@ -384,7 +385,7 @@ fun DisguiseScreen(s: Settings) {
                 s.fakeQuic = v
             }
         }
-        if (s.fakeQuic) Group("Fake packets") {
+        if (s.fakeQuic || s.tlsMethod == "fake") Group("Fake packets") {
             val saved = s.fakeTtl
             var ttl by remember(saved) { mutableStateOf(saved.toString()) }
             fun parse(t: String) = t.toIntOrNull()?.takeIf { it in 1..255 }
