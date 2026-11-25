@@ -49,7 +49,7 @@ func Start(fd, mtu int, cfg string, c Callback) error {
 	if stk != nil {
 		return errors.New("already running")
 	}
-	cb = c
+	cb.Store(&c)
 	s, err := newState(cfg)
 	if err != nil {
 		return err
@@ -136,8 +136,8 @@ func addrPort(a tcpip.Address, p uint16) netip.AddrPort {
 // verdict returns the owning uid and, if the flow must be dropped, why (else "").
 func verdict(s *state, proto int, src, dst netip.AddrPort) (int, string) {
 	uid := -1
-	if c := cb; c != nil {
-		uid = c.UidFor(proto, src.Addr().String(), int(src.Port()), dst.Addr().String(), int(dst.Port()))
+	if c := cb.Load(); c != nil {
+		uid = (*c).UidFor(proto, src.Addr().String(), int(src.Port()), dst.Addr().String(), int(dst.Port()))
 	}
 	why := ""
 	switch p := dst.Port(); {

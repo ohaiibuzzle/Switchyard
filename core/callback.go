@@ -1,6 +1,9 @@
 package core
 
-import "fmt"
+import (
+	"fmt"
+	"sync/atomic"
+)
 
 // Callback is implemented on the Kotlin side.
 type Callback interface {
@@ -9,10 +12,11 @@ type Callback interface {
 	Log(msg string)
 }
 
-var cb Callback
+// Atomic: flows mid-dial and WireGuard's logger can outlive Stop and race the next Start.
+var cb atomic.Pointer[Callback]
 
 func logf(format string, a ...any) {
-	if c := cb; c != nil {
-		c.Log(fmt.Sprintf(format, a...))
+	if c := cb.Load(); c != nil {
+		(*c).Log(fmt.Sprintf(format, a...))
 	}
 }
