@@ -213,20 +213,34 @@ func onUDP(r *udp.ForwarderRequest) bool {
 	id := r.ID()
 	src, dst := addrPort(id.RemoteAddress, id.RemotePort), addrPort(id.LocalAddress, id.LocalPort)
 	if s == nil {
-		return true
+		return false // gVisor frees the cloned packet only on false or CreateEndpoint
 	}
-	uid, why := verdict(s, unix.IPPROTO_UDP, src, dst)
-	if why != "" {
-		return true // handled = silently dropped
-	}
+	// This runs on the packet processor, so the binder UID lookup waits for the goroutine.
 	var wq waiter.Queue
 	ep, e := r.CreateEndpoint(&wq)
 	if e != nil {
 		return true
 	}
-	c := gonet.NewUDPConn(&wq, ep)
-	go forwardUDP(s, c, uid, dst)
+	go handleUDP(s, gonet.NewUDPConn(&wq, ep), src, dst)
 	return true
+}
+
+func handleUDP(s *state, c *gonet.UDPConn, src, dst netip.AddrPort) {
+	uid, why := verdict(s, unix.IPPROTO_UDP, src, dst)
+	if why == "" {
+		forwardUDP(s, c, uid, dst)
+		return
+	}
+	// Blocked: swallow the flow until it goes quiet, so retransmits hit this endpoint
+	// instead of the forwarder (one lookup and one log event per flow).
+	defer c.Close()
+	buf := make([]byte, 65535)
+	for {
+		c.SetReadDeadline(time.Now().Add(udpIdle))
+		if _, err := c.Read(buf); err != nil {
+			return
+		}
+	}
 }
 
 // resolve answers one DNS query: sinkhole if blocked, else ask the secure upstream.
