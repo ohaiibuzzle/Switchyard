@@ -52,6 +52,7 @@ func Start(fd, mtu int, cfg string, c Callback) error {
 	cb.Store(&c)
 	s, err := newState(cfg)
 	if err != nil {
+		closeTunnels() // newState may have brought one up before failing
 		return err
 	}
 	started := false

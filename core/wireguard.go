@@ -194,16 +194,20 @@ func wgFor(src string) (*wgTunnel, error) {
 	if wgCur != nil && wgCur.src == src {
 		return wgCur, nil
 	}
+	var c *wgConfig
+	if src != "" {
+		var err error
+		// Parse before closing, so a typo in a new config doesn't kill the working tunnel.
+		if c, err = parseWG(src, systemResolve); err != nil {
+			return nil, fmt.Errorf("wireguard: %w", err)
+		}
+	}
 	if wgCur != nil {
 		wgCur.dev.Close()
 		wgCur = nil
 	}
 	if src == "" {
 		return nil, nil
-	}
-	c, err := parseWG(src, systemResolve)
-	if err != nil {
-		return nil, fmt.Errorf("wireguard: %w", err)
 	}
 	t, err := startWG(c)
 	if err != nil {

@@ -198,7 +198,17 @@ func newState(js string) (*state, error) {
 		up.Close()
 		return nil, err
 	}
-	wg, err := wgFor(c.WGConf) // last, so a failure above doesn't tear down a working tunnel
+	var exit netip.Addr // zero = no exit node
+	if c.TSExitNode != "" {
+		if exit, err = netip.ParseAddr(c.TSExitNode); err != nil {
+			up.Close()
+			return nil, fmt.Errorf("tailscale: exit node %q: %w", c.TSExitNode, err)
+		}
+	}
+	// Tunnels last, so a failure above doesn't tear down a working one.
+	// shortcut: if tsFor/useExit fails after wgFor changed the tunnel, cur keeps the closed one until
+	// the next change; build a two-phase commit if that shows up in practice.
+	wg, err := wgFor(c.WGConf)
 	if err != nil {
 		up.Close()
 		return nil, err
@@ -209,7 +219,7 @@ func newState(js string) (*state, error) {
 		return nil, fmt.Errorf("tailscale: %w", err)
 	}
 	if ts != nil {
-		if err := ts.useExit(c.TSExitNode); err != nil {
+		if err := ts.useExit(exit); err != nil {
 			up.Close()
 			return nil, fmt.Errorf("tailscale: %w", err)
 		}

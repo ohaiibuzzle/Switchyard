@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net"
 	"net/netip"
 	"os"
@@ -39,7 +38,7 @@ type tsNode struct {
 	key string
 	srv *tsnet.Server
 	// The exit node last applied, valid once exitSet; only newState touches these, under the engine's mu.
-	exit    string
+	exit    netip.Addr
 	exitSet bool
 }
 
@@ -103,18 +102,11 @@ func (t *tsNode) dial(network string, dst netip.AddrPort) (net.Conn, error) {
 	return d.UserDial(ctx, network, dst.String())
 }
 
-// useExit sends the node's internet traffic through the exit node with this IP, or none for "".
+// useExit sends the node's internet traffic through the exit node with this IP, or none for the zero Addr.
 // The node is kept, so changing it doesn't drop tailnet connections or need a new login.
-func (t *tsNode) useExit(ip string) error {
-	if t.exitSet && ip == t.exit {
+func (t *tsNode) useExit(a netip.Addr) error {
+	if t.exitSet && a == t.exit {
 		return nil
-	}
-	var a netip.Addr // zero clears it
-	if ip != "" {
-		var err error
-		if a, err = netip.ParseAddr(ip); err != nil {
-			return fmt.Errorf("exit node %q: %w", ip, err)
-		}
 	}
 	lc, err := t.srv.LocalClient()
 	if err != nil {
@@ -126,7 +118,7 @@ func (t *tsNode) useExit(ip string) error {
 	if _, err := lc.EditPrefs(ctx, &ipn.MaskedPrefs{Prefs: ipn.Prefs{ExitNodeIP: a}, ExitNodeIPSet: true, ExitNodeIDSet: true}); err != nil {
 		return err
 	}
-	t.exit, t.exitSet = ip, true
+	t.exit, t.exitSet = a, true
 	return nil
 }
 
