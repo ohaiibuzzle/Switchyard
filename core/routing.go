@@ -158,7 +158,7 @@ func encrypted(addr string) error {
 	return fmt.Errorf("not an encrypted protocol")
 }
 
-func newState(js string) (*state, error) {
+func newState(js string) (_ *state, err error) {
 	var c config
 	dec := json.NewDecoder(strings.NewReader(js))
 	dec.DisallowUnknownFields() // a key the app and engine disagree on is a bug, not a no-op
@@ -189,38 +189,39 @@ func newState(js string) (*state, error) {
 		}
 		opts.Bootstrap = r
 	}
-	up, err := upstream.AddressToUpstream(c.DNSUpstream, opts)
-	if err != nil {
-		return nil, fmt.Errorf("upstream %q: %w", c.DNSUpstream, err)
-	}
 	d, err := newDialer(c.ProxyURL)
 	if err != nil {
-		up.Close()
 		return nil, err
 	}
 	var exit netip.Addr // zero = no exit node
 	if c.TSExitNode != "" {
 		if exit, err = netip.ParseAddr(c.TSExitNode); err != nil {
-			up.Close()
 			return nil, fmt.Errorf("tailscale: exit node %q: %w", c.TSExitNode, err)
 		}
 	}
-	// Tunnels last, so a failure above doesn't tear down a working one.
+	// Pure checks above, side effects below: the upstream, then the tunnels last, so a bad
+	// setting doesn't tear down a working one.
+	up, err := upstream.AddressToUpstream(c.DNSUpstream, opts)
+	if err != nil {
+		return nil, fmt.Errorf("upstream %q: %w", c.DNSUpstream, err)
+	}
+	defer func() {
+		if err != nil {
+			up.Close()
+		}
+	}()
 	// shortcut: if tsFor/useExit fails after wgFor changed the tunnel, cur keeps the closed one until
 	// the next change; build a two-phase commit if that shows up in practice.
 	wg, err := wgFor(c.WGConf)
 	if err != nil {
-		up.Close()
 		return nil, err
 	}
 	ts, err := tsFor(c.TSDir, c.TSHostname, c.TSControlURL, c.TSAuthKey)
 	if err != nil {
-		up.Close()
 		return nil, fmt.Errorf("tailscale: %w", err)
 	}
 	if ts != nil {
-		if err := ts.useExit(exit); err != nil {
-			up.Close()
+		if err = ts.useExit(exit); err != nil {
 			return nil, fmt.Errorf("tailscale: %w", err)
 		}
 	}

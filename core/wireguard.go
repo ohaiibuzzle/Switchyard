@@ -206,7 +206,7 @@ func wgFor(src string) (*wgTunnel, error) {
 		wgCur.dev.Close()
 		wgCur = nil
 	}
-	if src == "" {
+	if c == nil {
 		return nil, nil
 	}
 	t, err := startWG(c)

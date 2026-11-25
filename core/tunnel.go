@@ -50,18 +50,20 @@ func Start(fd, mtu int, cfg string, c Callback) error {
 		return errors.New("already running")
 	}
 	cb.Store(&c)
-	s, err := newState(cfg)
-	if err != nil {
-		closeTunnels() // newState may have brought one up before failing
-		return err
-	}
+	var s *state
 	started := false
 	defer func() {
-		if !started { // Stop() skips cleanup while stk is nil, so undo what newState brought up
-			s.up.Close()
+		if !started { // Stop() skips cleanup while stk is nil, so undo what newState brought up, even if it failed
+			if s != nil {
+				s.up.Close()
+			}
 			closeTunnels()
 		}
 	}()
+	s, err := newState(cfg)
+	if err != nil {
+		return err
+	}
 	if err := unix.SetNonblock(fd, true); err != nil {
 		return err
 	}
@@ -227,20 +229,17 @@ func onUDP(r *udp.ForwarderRequest) bool {
 }
 
 func handleUDP(s *state, c *gonet.UDPConn, src, dst netip.AddrPort) {
-	uid, why := verdict(s, unix.IPPROTO_UDP, src, dst)
-	if why == "" {
-		forwardUDP(s, c, uid, dst)
-		return
-	}
-	// Blocked: swallow the flow until it goes quiet, so retransmits hit this endpoint
-	// instead of the forwarder (one lookup and one log event per flow).
 	defer c.Close()
-	buf := make([]byte, 65535)
-	for {
-		c.SetReadDeadline(time.Now().Add(udpIdle))
-		if _, err := c.Read(buf); err != nil {
-			return
-		}
+	uid, why := verdict(s, unix.IPPROTO_UDP, src, dst)
+	switch {
+	case why != "":
+		// Swallow the flow until it goes quiet, so retransmits hit this endpoint
+		// instead of the forwarder (one lookup and one log event per flow).
+		pump(c, func([]byte) {})
+	case dst.Port() == 53:
+		serveDNSUDP(c, uid)
+	default:
+		forwardUDP(s, c, uid, dst)
 	}
 }
 
@@ -296,23 +295,31 @@ func serveDNSTCP(c net.Conn, uid int) {
 
 const udpIdle = 60 * time.Second
 
-func forwardUDP(s *state, c *gonet.UDPConn, uid int, dst netip.AddrPort) {
-	defer c.Close()
+// pump hands each datagram from src to f until src errors or idles out; f must copy what it keeps.
+func pump(src net.Conn, f func([]byte)) {
 	buf := make([]byte, 65535)
-	if dst.Port() == 53 {
-		for {
-			c.SetReadDeadline(time.Now().Add(udpIdle))
-			n, err := c.Read(buf)
-			if err != nil {
-				return
-			}
-			go func(q []byte) {
-				if a := resolve(q, uid); a != nil {
-					c.Write(a)
-				}
-			}(append([]byte(nil), buf[:n]...))
+	for {
+		src.SetReadDeadline(time.Now().Add(udpIdle))
+		n, err := src.Read(buf)
+		if err != nil {
+			return
 		}
+		f(buf[:n])
 	}
+}
+
+func serveDNSUDP(c net.Conn, uid int) {
+	pump(c, func(q []byte) {
+		q = append([]byte(nil), q...)
+		go func() {
+			if a := resolve(q, uid); a != nil {
+				c.Write(a)
+			}
+		}()
+	})
+}
+
+func forwardUDP(s *state, c *gonet.UDPConn, uid int, dst netip.AddrPort) {
 	// shortcut: with a proxy UDP still goes direct (no SOCKS5 UDP ASSOCIATE); WireGuard does carry UDP.
 	var out net.Conn
 	var err error
@@ -335,26 +342,10 @@ func forwardUDP(s *state, c *gonet.UDPConn, uid int, dst netip.AddrPort) {
 		fakeUDP(out, s.cfg.FakeTTL) // the app's first datagram is already waiting, so this goes ahead of it
 	}
 	go func() {
-		b := make([]byte, 65535)
-		for {
-			out.SetReadDeadline(time.Now().Add(udpIdle))
-			n, err := out.Read(b)
-			if err != nil {
-				c.Close()
-				return
-			}
-			c.Write(b[:n])
-		}
+		pump(out, func(b []byte) { c.Write(b) })
+		c.Close()
 	}()
-	for {
-		c.SetReadDeadline(time.Now().Add(udpIdle))
-		n, err := c.Read(buf)
-		if err != nil {
-			out.Close()
-			return
-		}
-		out.Write(buf[:n])
-	}
+	pump(c, func(b []byte) { out.Write(b) })
 }
 
 func forwardTCP(s *state, c *gonet.TCPConn, out net.Conn, dst netip.AddrPort) {
