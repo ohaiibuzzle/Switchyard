@@ -47,7 +47,7 @@ build-core.sh         rebuilds app/libs/core.aar
 ## Build and test
 
 - **Go core:**
-  - `cd core && go test ./...` runs on macOS, because the tests avoid linux-only files.
+  - `cd core && go test -race ./...` runs on macOS, because the tests avoid linux-only files.
   - `GOOS=android GOARCH=arm64 go vet ./...` also checks `tunnel.go`.
 - **AAR:** run `./build-core.sh` after *any* Go change; Gradle doesn't rebuild it. It needs `gomobile` in `$(go env GOPATH)/bin`, plus the NDK.
 - **App:**
