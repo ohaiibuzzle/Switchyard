@@ -57,7 +57,7 @@ android {
 
 dependencies {
     implementation(files("libs/core.aar"))
-    implementation(platform("androidx.compose:compose-bom:2026.09.00"))
+    implementation(platform("androidx.compose:compose-bom:2026.11.01"))
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material3:material3-adaptive-navigation-suite")
     // shortcut: icon library is frozen at 1.7.8 (deprecated); swap for Material Symbols drawables if it ever breaks.
