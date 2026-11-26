@@ -8,7 +8,7 @@ require (
 	github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20261116
 	github.com/miekg/dns v1.1.73
 	golang.org/x/crypto v0.59.0
-	golang.org/x/net v0.62.0
+	golang.org/x/net v0.63.0
 	golang.org/x/sys v0.50.0
 	golang.zx2c4.com/wireguard v0.0.0-20261024220952-b3bc704ef0ee
 	gvisor.dev/gvisor v0.0.0-20261104015118-c01d98fb120c
